@@ -1,2 +1,3 @@
 # ESP32-CANopen-Master-Light
-CANopen Master auf Basis eines ESP32 mit OLED-Menü, WebSocket-Schnittstelle, motorischer Steuerung und Support für Dunkermotoren. Modular, erweiterbar und bereit für industrielle Anwendungen.
+Dieses Open-Source-Projekt bietet eine leichtgewichtige, modulare Steuerungseinheit für CANopen-basierte Motoren und Geräte, realisiert auf einem ESP32.
+Es kombiniert Hardware-nahe Kommunikation über MCP2515 mit benutzerfreundlicher Bedienung via OLED-Menü und Webinterface.
