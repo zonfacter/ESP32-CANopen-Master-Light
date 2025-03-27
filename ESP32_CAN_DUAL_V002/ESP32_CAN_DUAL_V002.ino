@@ -44,9 +44,11 @@ unsigned long lastErrorTime = 0;
 void showMessage(const char* msg);
 void showStatusMessage(const char* title, const char* message, bool isError = false);
 void scanNodes(int startID, int endID);
+bool tryScanNode(int id, bool extendedScan);
 void changeNodeId(uint8_t from, uint8_t to);
 void handleSerialCommands();
 void printHelpMenu();
+void handleLocalBaudrateCommand(String command);
 void handleBaudrateCommand(String command);
 void handleChangeCommand(String command);
 void handleRangeCommand(String command);
@@ -54,6 +56,7 @@ bool isValidBaudrate(int baudrate);
 void printCurrentSettings();
 void systemReset();
 bool autoBaudrateDetection();
+bool scanSingleNode(int id, int baudrate, int maxAttempts, int timeoutMs);
 void processCANMessage();
 void decodeCANMessage(unsigned long rxId, uint8_t nodeId, uint16_t baseId, byte* buf, byte len);
 void decodeNMTState(byte state);
@@ -62,6 +65,8 @@ void decodeSDOAbortCode(uint32_t abortCode);
 bool changeBaudrate(uint8_t nodeId, uint8_t baudrateIndex);
 bool updateESP32CANBaudrate(int newBaudrate);
 uint8_t getBaudrateIndex(int baudrateKbps);
+void handleTestNodeCommand(String command);
+bool testSingleNode(int nodeId, int maxAttempts, int timeoutMs);
 
 // Funktionsdeklaration
 uint8_t convertBaudrateToCANSpeed(int baudrateKbps);
@@ -278,67 +283,59 @@ void scanNodes(int startID, int endID) {
     if (startID < 1) startID = 1;
     if (endID > 127) endID = 127;
     
-    for (int id = startID; id <= endID; id++) {
-        // SDO-Leseanfrage an Fehlerregister (0x1001:00) vorbereiten
-        byte sdo[8] = { 0x40, 0x01, 0x10, 0x00, 0, 0, 0, 0 };
+    // Länger warten vor dem Start des Scans, damit der CAN-Bus bereit ist
+    delay(200);
+    
+    // Live-Monitor-Modus während des Scans aktivieren
+    bool wasMonitorActive = liveMonitor;
+    liveMonitor = true;
+    
+    // Erst die bekannten Node-IDs scannen (insbesondere Node 10)
+    int knownNodes[] = {10, 1, 2, 3, 4, 5};
+    int knownNodesCount = sizeof(knownNodes) / sizeof(knownNodes[0]);
+    
+    for (int i = 0; i < knownNodesCount; i++) {
+        int id = knownNodes[i];
         
-        // Anfrage senden mit Fehlerbehandlung
-        byte result = CAN.sendMsgBuf(0x600 + id, 0, 8, sdo);
-        if (result != CAN_OK) {
-            Serial.printf("[FEHLER] Konnte keine Anfrage an Node %d senden: %d\n", id, result);
-            continue; // Mit dem nächsten Node fortfahren
+        // Nur scannen, wenn die ID im angegebenen Bereich liegt
+        if (id < startID || id > endID) {
+            continue;
         }
         
-        Serial.printf("[SCAN] Frage Node %d ab...\n", id);
-
-        // Auf Antwort warten mit Timeout
-        unsigned long start = millis();
-        bool responded = false;
-        bool errorResponse = false;
-
-        while (millis() - start < 200) { // 200ms Timeout pro Node
-            if (!digitalRead(CAN_INT)) {
-                unsigned long rxId;
-                byte len;
-                byte buf[8];
-                
-                // Antwort lesen mit Fehlerbehandlung
-                byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
-                if (readStatus != CAN_OK) {
-                    Serial.printf("[FEHLER] Fehler beim Lesen: %d\n", readStatus);
-                    break;
-                }
-                
-                // Prüfen, ob es sich um eine Antwort auf unsere SDO-Anfrage handelt
-                if (rxId == (0x580 + id)) {
-                    // Prüfen, ob es eine Fehlerantwort ist (SDO Abort)
-                    if ((buf[0] & 0xE0) == 0x80) {
-                        uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
-                        Serial.printf("[OK] Node %d hat mit Fehler geantwortet! Abortcode: 0x%08X\n", id, abortCode);
-                        display.printf("Node %d: Err\n", id);
-                        errorResponse = true;
-                    } else {
-                        // Reguläre Antwort
-                        Serial.printf("[OK] Node %d hat geantwortet! Fehlerreg: 0x%02X\n", id, buf[4]);
-                        display.printf("Node %d: OK\n", id);
-                        foundNodes++;
-                    }
-                    
-                    display.display();
-                    responded = true;
-                    break;
-                }
+        Serial.printf("[SCAN] Scanne bekannte Node-ID %d mit erweitertem Timeout...\n", id);
+        
+        // Verschiedene SDO-Anfragen für diesen Node probieren
+        if (tryScanNode(id, true)) {
+            foundNodes++;
+        }
+    }
+    
+    // Jetzt den Rest des Bereichs scannen
+    for (int id = startID; id <= endID; id++) {
+        // Bekannte Nodes überspringen, die bereits gescannt wurden
+        bool isKnown = false;
+        for (int i = 0; i < knownNodesCount; i++) {
+            if (id == knownNodes[i]) {
+                isKnown = true;
+                break;
             }
         }
-
-        if (!responded) {
-            Serial.printf("[--] Node %d keine Antwort\n", id);
-        } else if (!errorResponse) {
+        
+        if (isKnown) {
+            continue;
+        }
+        
+        // Normale Nodes mit Standardparametern scannen
+        if (tryScanNode(id, false)) {
             foundNodes++;
         }
         
-        delay(50); // Kurze Pause zwischen den Anfragen
+        // Kurze Pause zwischen den Nodes
+        delay(20);
     }
+    
+    // Live-Monitor-Modus zurücksetzen
+    liveMonitor = wasMonitorActive;
     
     // Zusammenfassung anzeigen
     display.clearDisplay();
@@ -353,7 +350,122 @@ void scanNodes(int startID, int endID) {
 }
 
 // ===================================================================================
-// Funktion: handleSerialCommands
+// Funktion: tryScanNode
+// Beschreibung: Hilfsfunktion zum Scannen eines einzelnen Nodes mit verschiedenen Methoden
+// ===================================================================================
+bool tryScanNode(int id, bool extendedScan) {
+    bool responded = false;
+    bool errorResponse = false;
+    
+    // Anzahl der Versuche und Timeout-Zeit
+    int maxAttempts = extendedScan ? 3 : 1;
+    int timeoutMs = extendedScan ? 300 : 200;
+    
+    Serial.printf("[SCAN] Frage Node %d ab... (%d Versuche, %dms Timeout)\n", id, maxAttempts, timeoutMs);
+    
+    // Mehrere Versuche mit verschiedenen Objekten
+    for (int attempt = 0; attempt < maxAttempts && !responded; attempt++) {
+        // Verschiedene SDO-Objekte probieren
+        uint16_t objectIndices[] = {0x1001, 0x1000, 0x1018};
+        
+        for (int objIdx = 0; objIdx < 3 && !responded; objIdx++) {
+            // SDO-Leseanfrage vorbereiten (Fehlerstatus, Gerätetyp oder Identität)
+            byte sdo[8] = { 0x40, (byte)(objectIndices[objIdx] & 0xFF), (byte)(objectIndices[objIdx] >> 8), 0x00, 0, 0, 0, 0 };
+            
+            // Anfrage senden mit Fehlerbehandlung
+            byte result = CAN.sendMsgBuf(0x600 + id, 0, 8, sdo);
+            if (result != CAN_OK) {
+                Serial.printf("[FEHLER] Konnte keine Anfrage an Node %d senden: %d\n", id, result);
+                delay(30); // Kurze Pause vor dem nächsten Versuch
+                continue;
+            }
+            
+            // Auf Antwort warten mit Timeout
+            unsigned long start = millis();
+            
+            // Erst warten, ob ein Heartbeat oder Emergency auftaucht (passiv)
+            while (millis() - start < 50) {
+                if (!digitalRead(CAN_INT)) {
+                    unsigned long rxId;
+                    byte len;
+                    byte buf[8];
+                    
+                    byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
+                    if (readStatus != CAN_OK) {
+                        continue;
+                    }
+                    
+                    // Heartbeat oder Emergency von diesem Node?
+                    if (rxId == (0x700 + id) || rxId == (0x080 + id)) {
+                        Serial.printf("[OK] Node %d gefunden über %s!\n", id, 
+                                    (rxId == (0x700 + id)) ? "Heartbeat" : "Emergency");
+                        display.printf("Node %d: OK (HB)\n", id);
+                        display.display();
+                        responded = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Dann auf die SDO-Antwort warten, wenn noch keine Antwort da ist
+            start = millis();
+            while (!responded && millis() - start < timeoutMs) {
+                if (!digitalRead(CAN_INT)) {
+                    unsigned long rxId;
+                    byte len;
+                    byte buf[8];
+                    
+                    // Antwort lesen mit Fehlerbehandlung
+                    byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
+                    if (readStatus != CAN_OK) {
+                        continue;
+                    }
+                    
+                    // Prüfen, ob es sich um eine Antwort auf unsere SDO-Anfrage handelt
+                    if (rxId == (0x580 + id)) {
+                        // Prüfen, ob es eine Fehlerantwort ist (SDO Abort)
+                        if ((buf[0] & 0xE0) == 0x80) {
+                            uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
+                            Serial.printf("[OK] Node %d hat mit Fehler geantwortet! Abortcode: 0x%08X\n", id, abortCode);
+                            display.printf("Node %d: Err\n", id);
+                            errorResponse = true;
+                        } else {
+                            // Reguläre Antwort
+                            Serial.printf("[OK] Node %d hat geantwortet! ObjIdx: 0x%04X\n", id, objectIndices[objIdx]);
+                            display.printf("Node %d: OK\n", id);
+                        }
+                        
+                        display.display();
+                        responded = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Pause zwischen verschiedenen Objekten
+            if (!responded) {
+                delay(20);
+            }
+        }
+        
+        // Pause zwischen den Versuchen
+        if (!responded && attempt < maxAttempts - 1) {
+            delay(50);
+        }
+    }
+    
+    if (!responded) {
+        Serial.printf("[--] Node %d keine Antwort\n", id);
+        return false;
+    } else if (errorResponse) {
+        // Auch Fehlerantworten zählen als gefundene Nodes
+        return true;
+    } else {
+        return true;
+    }
+}
+// ===================================================================================
+// Funktion: handleSerialCommands (aktualisierte Version)
 // Beschreibung: Verarbeitet Befehle, die über die serielle Schnittstelle empfangen werden
 // ===================================================================================
 void handleSerialCommands() {
@@ -385,6 +497,12 @@ void handleSerialCommands() {
         else if (command.startsWith("baudrate")) {
             handleBaudrateCommand(command);
         }
+        else if (command.startsWith("localbaud")) {
+            handleLocalBaudrateCommand(command);
+        }
+        else if (command.startsWith("testnode")) {
+            handleTestNodeCommand(command);
+        }
         else if (command == "auto") {
             autoBaudrateRequest = true;
             Serial.println("[INFO] Starte automatische Baudratenerkennung...");
@@ -412,7 +530,6 @@ void handleSerialCommands() {
         }
     }
 }
-
 // ===================================================================================
 // Funktion: printHelpMenu
 // Beschreibung: Zeigt eine Hilfe mit allen verfügbaren Befehlen an
@@ -426,7 +543,9 @@ void printHelpMenu() {
     Serial.println("  monitor on    → Live Monitor aktivieren");
     Serial.println("  monitor off   → Live Monitor deaktivieren");
     Serial.println("  change a b    → Node-ID a → b ändern (SDO)");
-    Serial.println("  baudrate nodid x    → Baudrate ändern (x in kbps: 10, 20, 50, 100, 125, 250, 500, 800, 1000)");
+    Serial.println("  baudrate x y  → Baudrate ändern (nodeID x auf y kbps: 10, 20, 50, 100, 125, 250, 500, 800, 1000)");
+    Serial.println("  localbaud x   → Lokale ESP32-Baudrate ändern (nur ESP32, ohne CANopen-Kommunikation)");
+    Serial.println("  testnode x    → Einzelnen Node x intensiv testen (mit erweiterten Optionen)");
     Serial.println("  auto          → Automatische Baudratenerkennung starten");
     Serial.println("  info          → Aktuelle Einstellungen anzeigen");
     Serial.println("  save          → Einstellungen speichern");
@@ -434,6 +553,41 @@ void printHelpMenu() {
     Serial.println("  version       → Versionsinfo anzeigen");
     Serial.println("  reset         → System zurücksetzen");
     Serial.println("=======================================");
+}
+// ===================================================================================
+// Funktion: handleLocalBaudrateCommand
+// Beschreibung: Verarbeitet den Befehl zum Ändern der lokalen ESP32-Baudrate
+// ===================================================================================
+void handleLocalBaudrateCommand(String command) {
+    // Format: localbaud baudrate
+    int spacePos = command.indexOf(' ');
+    if (spacePos > 0) {
+        // Die Baudrate extrahieren
+        int baudrate = command.substring(spacePos + 1).toInt();
+        
+        // Prüfen, ob die Baudrate gültig ist
+        if (isValidBaudrate(baudrate)) {
+            Serial.printf("[INFO] Ändere lokale ESP32-Baudrate auf %d kbps\n", baudrate);
+            
+            // Direkt die ESP32-Baudrate umkonfigurieren ohne CANopen-Kommunikation
+            if (updateESP32CANBaudrate(baudrate)) {
+                // Baudrate erfolgreich geändert
+                currentBaudrate = baudrate;
+                Serial.printf("[ERFOLG] ESP32 CAN-Bus ist jetzt auf %d kbps eingestellt\n", baudrate);
+                
+                // Einstellungen speichern
+                saveSettings();
+                
+                // Display aktualisieren
+                showStatusMessage("Lokale Baudrate", 
+                                 String("Baudrate: " + String(baudrate) + " kbps").c_str());
+            }
+        } else {
+            Serial.println("[FEHLER] Ungültige Baudrate! Gültige Werte: 10, 20, 50, 100, 125, 250, 500, 800, 1000 kbps");
+        }
+    } else {
+        Serial.println("[FEHLER] Falsche Syntax. Korrekt: localbaud baudrate (z.B. localbaud 500)");
+    }
 }
 
 // ===================================================================================
@@ -531,7 +685,227 @@ void handleRangeCommand(String command) {
         Serial.println("[FEHLER] Falsche Syntax. Korrekt: range x y");
     }
 }
+// ===================================================================================
+// Funktion: handleTestNodeCommand
+// Beschreibung: Verarbeitet den Befehl zum Testen einer einzelnen Node-ID
+// ===================================================================================
+void handleTestNodeCommand(String command) {
+    // Format: testnode nodeID [attempts] [timeout]
+    int firstSpace = command.indexOf(' ');
+    if (firstSpace > 0) {
+        String rest = command.substring(firstSpace + 1);
+        rest.trim();
+        
+        // Parameter extrahieren
+        int secondSpace = rest.indexOf(' ');
+        int thirdSpace = -1;
+        
+        int nodeId = 0;
+        int attempts = 5;  // Standardwert: 5 Versuche
+        int timeout = 500; // Standardwert: 500ms Timeout
+        
+        if (secondSpace > 0) {
+            // NodeID und Versuche angegeben
+            nodeId = rest.substring(0, secondSpace).toInt();
+            
+            String attemptsStr = rest.substring(secondSpace + 1);
+            thirdSpace = attemptsStr.indexOf(' ');
+            
+            if (thirdSpace > 0) {
+                // Auch Timeout angegeben
+                attempts = attemptsStr.substring(0, thirdSpace).toInt();
+                timeout = attemptsStr.substring(thirdSpace + 1).toInt();
+            } else {
+                // Nur Versuche angegeben
+                attempts = attemptsStr.toInt();
+            }
+        } else {
+            // Nur NodeID angegeben
+            nodeId = rest.toInt();
+        }
+        
+        // Prüfen, ob NodeID gültig ist
+        if (nodeId >= 1 && nodeId <= 127) {
+            Serial.printf("[TEST] Starte erweiterten Test für Node %d (%d Versuche, %dms Timeout)\n", 
+                          nodeId, attempts, timeout);
+            
+            // Live-Monitor-Status merken und vorübergehend aktivieren
+            bool wasMonitorActive = liveMonitor;
+            liveMonitor = true;
+            
+            bool success = testSingleNode(nodeId, attempts, timeout);
+            
+            // Live-Monitor zurücksetzen
+            liveMonitor = wasMonitorActive;
+            
+            if (success) {
+                Serial.printf("[TEST] Node %d erfolgreich gefunden und kommuniziert!\n", nodeId);
+                showStatusMessage("Node Test", String("Node " + String(nodeId) + " gefunden!").c_str());
+            } else {
+                Serial.printf("[TEST] Node %d konnte nicht erreicht werden.\n", nodeId);
+                showStatusMessage("Node Test", String("Node " + String(nodeId) + " nicht gefunden").c_str(), true);
+            }
+        } else {
+            Serial.println("[FEHLER] Ungültige Node-ID! Gültige Werte: 1-127");
+        }
+    } else {
+        Serial.println("[FEHLER] Falsche Syntax. Korrekt: testnode nodeID [versuche] [timeout]");
+        Serial.println("         Beispiel: testnode 10    (Standard: 5 Versuche, 500ms Timeout)");
+        Serial.println("         Beispiel: testnode 10 10 1000  (10 Versuche, 1000ms Timeout)");
+    }
+}
 
+// ===================================================================================
+// Funktion: testSingleNode
+// Beschreibung: Testet eine einzelne Node-ID mit erweiterten Optionen
+// ===================================================================================
+bool testSingleNode(int nodeId, int maxAttempts, int timeoutMs) {
+    bool responded = false;
+    
+    Serial.printf("[TEST] --- Starte Test für Node %d ---\n", nodeId);
+    
+    // 1. Erst auf Heartbeats und Emergency-Nachrichten hören
+    Serial.println("[TEST] Warte auf Heartbeat oder Emergency...");
+    unsigned long startListening = millis();
+    while (millis() - startListening < 1000 && !responded) { // 1 Sekunde auf passive Nachrichten warten
+        if (!digitalRead(CAN_INT)) {
+            unsigned long rxId;
+            byte len;
+            byte buf[8];
+            
+            byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
+            if (readStatus != CAN_OK) {
+                delay(1);
+                continue;
+            }
+            
+            // Zeige alle Nachrichten im Live-Monitor an
+            Serial.printf("[CAN] ID: 0x%X Len: %d →", rxId, len);
+            for (int i = 0; i < len; i++) {
+                Serial.printf(" %02X", buf[i]);
+            }
+            
+            // Heartbeat oder Emergency von diesem Node?
+            if (rxId == (0x700 + nodeId) || rxId == (0x080 + nodeId)) {
+                Serial.printf("  [%s von Node %d]\n", 
+                          (rxId == (0x700 + nodeId)) ? "Heartbeat" : "Emergency");
+                responded = true;
+                break;
+            } else {
+                Serial.println();
+            }
+        }
+        delay(1);
+    }
+    
+    // 2. Falls keine passive Nachricht, versuche aktiv verschiedene SDO-Objekte
+    if (!responded) {
+        Serial.println("[TEST] Kein Heartbeat gefunden, starte aktive SDO-Anfragen...");
+        
+        // Verschiedene wichtige CANopen-Objekte testen
+        uint16_t objectIndices[] = {0x1000, 0x1001, 0x1018, 0x1008, 0x1009, 0x100A, 0x1017};
+        const char* objectNames[] = {"Gerätetyp", "Fehlerregister", "Identität", "Herstellername", 
+                                    "Hardware-Version", "Software-Version", "Producer Heartbeat"};
+        
+        for (int attempt = 0; attempt < maxAttempts && !responded; attempt++) {
+            Serial.printf("[TEST] Versuch %d von %d...\n", attempt + 1, maxAttempts);
+            
+            // Verschiedene Objekte durchprobieren
+            for (int objIdx = 0; objIdx < 7 && !responded; objIdx++) {
+                // SDO-Leseanfrage vorbereiten
+                byte sdo[8] = { 0x40, (byte)(objectIndices[objIdx] & 0xFF), 
+                               (byte)(objectIndices[objIdx] >> 8), 0x00, 0, 0, 0, 0 };
+                
+                // Anfrage senden
+                Serial.printf("[TEST] Sende SDO-Anfrage für Objekt 0x%04X (%s)...\n", 
+                             objectIndices[objIdx], objectNames[objIdx]);
+                
+                byte result = CAN.sendMsgBuf(0x600 + nodeId, 0, 8, sdo);
+                if (result != CAN_OK) {
+                    Serial.printf("[TEST] Sendefehler: %d\n", result);
+                    delay(50);
+                    continue;
+                }
+                
+                // Auf Antwort warten
+                unsigned long start = millis();
+                while (millis() - start < timeoutMs && !responded) {
+                    if (!digitalRead(CAN_INT)) {
+                        unsigned long rxId;
+                        byte len;
+                        byte buf[8];
+                        
+                        byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
+                        if (readStatus != CAN_OK) {
+                            delay(1);
+                            continue;
+                        }
+                        
+                        // Alle Nachrichten anzeigen
+                        Serial.printf("[CAN] ID: 0x%X Len: %d →", rxId, len);
+                        for (int i = 0; i < len; i++) {
+                            Serial.printf(" %02X", buf[i]);
+                        }
+                        Serial.println();
+                        
+                        // Prüfen, ob es sich um eine Antwort auf unsere SDO-Anfrage handelt
+                        if (rxId == (0x580 + nodeId)) {
+                            // Prüfen, ob es eine Fehlerantwort ist (SDO Abort)
+                            if ((buf[0] & 0xE0) == 0x80) {
+                                uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
+                                Serial.printf("[TEST] SDO-Abort bei Objekt 0x%04X, Code: 0x%08X\n", 
+                                            objectIndices[objIdx], abortCode);
+                            } else {
+                                Serial.printf("[TEST] Erfolgreich Antwort auf Objekt 0x%04X erhalten!\n", 
+                                            objectIndices[objIdx]);
+                                
+                                // Wert auslesen und anzeigen, wenn es eine Upload-Antwort ist
+                                if ((buf[0] & 0xF0) == 0x40) {
+                                    uint32_t value = 0;
+                                    for (int i = 4; i < 8; i++) {
+                                        value |= (uint32_t)buf[i] << ((i - 4) * 8);
+                                    }
+                                    Serial.printf("[TEST] Wert: 0x%08X (%u)\n", value, value);
+                                }
+                            }
+                            
+                            responded = true;
+                            break;
+                        }
+                        
+                        // Auch Heartbeat oder Emergency Nachrichten beachten
+                        if (rxId == (0x700 + nodeId) || rxId == (0x080 + nodeId)) {
+                            Serial.printf("[TEST] %s während SDO-Test empfangen!\n", 
+                                     (rxId == (0x700 + nodeId)) ? "Heartbeat" : "Emergency");
+                            responded = true;
+                            break;
+                        }
+                    }
+                    delay(1);
+                }
+                
+                // Pause zwischen den Objekten
+                if (!responded) {
+                    delay(30);
+                }
+            }
+            
+            // Pause zwischen den Versuchen
+            if (!responded && attempt < maxAttempts - 1) {
+                delay(100);
+            }
+        }
+    }
+    
+    // Ergebnis ausgeben
+    if (responded) {
+        Serial.printf("[TEST] Node %d erfolgreich getestet!\n", nodeId);
+        return true;
+    } else {
+        Serial.printf("[TEST] Node %d konnte nicht erreicht werden.\n", nodeId);
+        return false;
+    }
+}
 // ===================================================================================
 // Funktion: isValidBaudrate
 // Beschreibung: Prüft, ob eine Baudrate gültig ist
@@ -893,7 +1267,31 @@ bool updateESP32CANBaudrate(int newBaudrate) {
     // CAN.endSPI() existiert nicht - stattdessen setzen wir den CAN-Controller zurück
     
     // Mit neuer Baudrate rekonfigurieren
-    if (CAN.begin(MCP_ANY, convertBaudrateToCANSpeed(newBaudrate), CAN_CLOCK) == CAN_OK) {
+    if (newBaudrate == 500) {
+        Serial.println("[INFO] Optimierte Konfiguration für 500 kbps...");
+        
+        // Bei 500 kbps spezielle Initialisierungsversuche
+        // Erster Versuch mit Standardkonfiguration
+        if (CAN.begin(MCP_ANY, CAN_500KBPS, CAN_CLOCK) != CAN_OK) {
+            Serial.println("[INFO] Standard 500 kbps fehlgeschlagen, versuche alternative Konfiguration...");
+            
+            // Zweiter Versuch mit anderer Konfiguration
+            if (CAN.begin(MCP_STDEXT, CAN_500KBPS, CAN_CLOCK) != CAN_OK) {
+                Serial.println("[FEHLER] Alle Versuche für 500 kbps fehlgeschlagen!");
+                goto ERROR_RETURN;
+            }
+        }
+        
+        // Erfolgreich bei 500 kbps konfiguriert
+        CAN.setMode(MCP_NORMAL);
+        Serial.println("[INFO] ESP32 CAN-Bus erfolgreich auf 500 kbps umkonfiguriert (optimiert)");
+        
+        // OLED-Display aktualisieren
+        showStatusMessage("Baudrate geändert", 
+                        "Neue Baudrate: 500 kbps\n(optimierte Konfiguration)");
+        return true;
+    } 
+    else if (CAN.begin(MCP_ANY, convertBaudrateToCANSpeed(newBaudrate), CAN_CLOCK) == CAN_OK) {
         CAN.setMode(MCP_NORMAL);
         Serial.printf("[INFO] ESP32 CAN-Bus erfolgreich auf %d kbps umkonfiguriert\n", newBaudrate);
         
@@ -901,22 +1299,23 @@ bool updateESP32CANBaudrate(int newBaudrate) {
         showStatusMessage("Baudrate geändert", 
                           String("Neue Baudrate: " + String(newBaudrate) + " kbps").c_str());
         return true;
+    } 
+    
+ERROR_RETURN:
+    // Bei Fehler: Zurück zur alten Baudrate
+    Serial.println("[FEHLER] ESP32 CAN-Bus Rekonfiguration fehlgeschlagen!");
+    
+    // Versuchen, zur alten Baudrate zurückzukehren
+    if (CAN.begin(MCP_ANY, convertBaudrateToCANSpeed(currentBaudrate), CAN_CLOCK) == CAN_OK) {
+        CAN.setMode(MCP_NORMAL);
+        Serial.printf("[INFO] Zurück zur vorherigen Baudrate (%d kbps)\n", currentBaudrate);
     } else {
-        Serial.println("[FEHLER] ESP32 CAN-Bus Rekonfiguration fehlgeschlagen!");
-        
-        // Versuchen, zur alten Baudrate zurückzukehren
-        if (CAN.begin(MCP_ANY, convertBaudrateToCANSpeed(currentBaudrate), CAN_CLOCK) == CAN_OK) {
-            CAN.setMode(MCP_NORMAL);
-            Serial.printf("[INFO] Zurück zur vorherigen Baudrate (%d kbps)\n", currentBaudrate);
-        } else {
-            Serial.println("[KRITISCH] Kann CAN-Bus nicht zurücksetzen! Neustart erforderlich!");
-            systemError = true;
-            lastErrorTime = millis();
-        }
-        return false;
+        Serial.println("[KRITISCH] Kann CAN-Bus nicht zurücksetzen! Neustart erforderlich!");
+        systemError = true;
+        lastErrorTime = millis();
     }
+    return false;
 }
-
 // ===================================================================================
 // Funktion: changeCommunicationSettings
 // Beschreibung: Umfassende Funktion zum Ändern der Kommunikationseinstellungen
@@ -993,12 +1392,16 @@ void changeCommunicationSettings(uint8_t targetNodeId, int newBaudrateKbps) {
 // Beschreibung: Automatische Baudratenerkennung durch Testen verschiedener Baudraten
 // ===================================================================================
 bool autoBaudrateDetection() {
-    // Zu testende Baudraten
+    // Zu testende Baudraten - wichtigste zuerst
     int baudrates[] = {125, 250, 500, 1000, 100, 50, 20, 10, 800};
     int numBaudrates = sizeof(baudrates) / sizeof(baudrates[0]);
     
     Serial.println("[INFO] Starte automatische Baudratenerkennung...");
     showStatusMessage("Baudratenerkennung", "Suche nach Geräten...");
+    
+    // Eine Menge bekannter Node-IDs, die wir als erstes testen
+    const int knownNodeCount = 5;
+    const int knownNodes[knownNodeCount] = {1, 2, 3, 4, 5}; // Häufige Node-IDs
     
     for (int i = 0; i < numBaudrates; i++) {
         Serial.printf("[INFO] Teste Baudrate: %d kbps\n", baudrates[i]);
@@ -1009,51 +1412,72 @@ bool autoBaudrateDetection() {
             continue;
         }
         
+        // Wichtig: Nach dem Baudratenwechsel etwas warten, damit sich der CAN-Controller stabilisieren kann
+        delay(200);
+        
         // Scan durchführen
         int foundNodes = 0;
         
-        // Suche nach bekannten Node-IDs im Netzwerk
-        for (int id = 1; id <= 127; id++) {
-            if (id % 16 == 0) {
-                Serial.printf("[INFO] Prüfe Nodes %d bis %d...\n", id-15, id);
+        // Erst bekannte Nodes testen
+        Serial.println("[INFO] Teste zuerst bekannte Node-IDs...");
+        for (int k = 0; k < knownNodeCount; k++) {
+            int id = knownNodes[k];
+            Serial.printf("[SCAN] Teste bekannte Node-ID: %d\n", id);
+            
+            // Bei dieser Node mehr Zeit investieren
+            bool nodeFound = scanSingleNode(id, baudrates[i], 3, 150); // 3 Versuche, 150ms Timeout
+            
+            if (nodeFound) {
+                foundNodes++;
+                Serial.printf("[ERFOLG] Bekannte Node %d gefunden bei %d kbps!\n", id, baudrates[i]);
+                break; // Ein Fund ist genug
             }
+        }
+        
+        // Wenn bei bekannten Nodes nichts gefunden wurde, den vollen Scan starten
+        if (foundNodes == 0) {
+            Serial.println("[INFO] Starte vollständigen Scan...");
             
-            // SDO-Leseanfrage an Fehlerregister (0x1001:00) vorbereiten
-            byte sdo[8] = { 0x40, 0x01, 0x10, 0x00, 0, 0, 0, 0 };
-            
-            // Anfrage senden
-            CAN.sendMsgBuf(COB_ID_RSDO_BASE + id, 0, 8, sdo);
-            
-            // Auf Antwort warten mit kurzem Timeout
-            unsigned long start = millis();
-            while (millis() - start < 50) { // 50ms Timeout
-                if (!digitalRead(CAN_INT)) {
-                    unsigned long rxId;
-                    byte len;
-                    byte buf[8];
+            // In 10er-Schritten für bessere Übersicht
+            for (int idBlock = 1; idBlock <= 127; idBlock += 10) {
+                int endBlock = min(idBlock + 9, 127);
+                Serial.printf("[INFO] Prüfe Nodes %d bis %d...\n", idBlock, endBlock);
+                
+                for (int id = idBlock; id <= endBlock; id++) {
+                    // Kurze Pause zwischen Nodes
+                    delay(10);
                     
-                    // Antwort lesen
-                    CAN.readMsgBuf(&rxId, &len, buf);
+                    // Bei 500 kbps mehr Versuche und längeres Timeout
+                    int attempts = (baudrates[i] == 500) ? 2 : 1;
+                    int timeout = (baudrates[i] == 500) ? 100 : 50;
                     
-                    // Prüfen, ob es sich um eine Antwort auf unsere SDO-Anfrage handelt
-                    if (rxId == (COB_ID_TSDO_BASE + id)) {
+                    bool nodeFound = scanSingleNode(id, baudrates[i], attempts, timeout);
+                    
+                    if (nodeFound) {
                         foundNodes++;
-                        Serial.printf("[INFO] Node %d gefunden bei %d kbps!\n", id, baudrates[i]);
-                        break;
+                        
+                        // Bei 500 kbps schon bei einem Fund erfolgreich
+                        if (baudrates[i] == 500 || foundNodes >= 3) {
+                            break;
+                        }
                     }
                 }
-            }
-            
-            // Bei mehr als 3 gefundenen Knoten können wir die Suche abbrechen
-            if (foundNodes >= 3) {
-                break;
+                
+                // Genug Nodes gefunden?
+                if ((baudrates[i] == 500 && foundNodes > 0) || foundNodes >= 3) {
+                    break;
+                }
+                
+                // Kurze Pause zwischen Blöcken
+                delay(50);
             }
         }
         
         // Wenn Nodes gefunden wurden, haben wir die richtige Baudrate
         if (foundNodes > 0) {
             currentBaudrate = baudrates[i];
-            Serial.printf("[ERFOLG] Baudrate erkannt: %d kbps mit %d gefundenen Nodes\n", currentBaudrate, foundNodes);
+            Serial.printf("[ERFOLG] Baudrate erkannt: %d kbps mit %d gefundenen Nodes\n", 
+                          currentBaudrate, foundNodes);
             
             // Einstellungen speichern
             saveSettings();
@@ -1064,6 +1488,9 @@ bool autoBaudrateDetection() {
             
             return true;
         }
+        
+        // Längere Pause zwischen Baudraten
+        delay(300);
     }
     
     // Keine passende Baudrate gefunden, zurück zur Standard-Baudrate
@@ -1072,6 +1499,57 @@ bool autoBaudrateDetection() {
     currentBaudrate = 125;
     
     showStatusMessage("Fehler", "Keine Baudrate\nmit Geräten gefunden", true);
+    
+    return false;
+}
+
+// ===================================================================================
+// Hilfsfunktion: scanSingleNode
+// Beschreibung: Prüft, ob ein einzelner Node bei einer bestimmten Baudrate erreichbar ist
+// ===================================================================================
+bool scanSingleNode(int id, int baudrate, int maxAttempts, int timeoutMs) {
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        // SDO-Leseanfrage an Fehlerregister (0x1001:00) vorbereiten
+        byte sdo[8] = { 0x40, 0x01, 0x10, 0x00, 0, 0, 0, 0 };
+        
+        // Anfrage senden
+        byte sendStatus = CAN.sendMsgBuf(0x600 + id, 0, 8, sdo);
+        if (sendStatus != CAN_OK) {
+            if (attempt == 0) { // Nur beim ersten Versuch loggen, um das Log nicht zu überfüllen
+                Serial.printf("[DEBUG] Sendefehler bei Node %d, Versuch %d: %d\n", id, attempt, sendStatus);
+            }
+            delay(20); // Kurze Pause vor dem nächsten Versuch
+            continue;
+        }
+        
+        // Auf Antwort warten mit Timeout
+        unsigned long start = millis();
+        while (millis() - start < timeoutMs) {
+            if (!digitalRead(CAN_INT)) {
+                unsigned long rxId;
+                byte len;
+                byte buf[8];
+                
+                // Antwort lesen
+                byte readStatus = CAN.readMsgBuf(&rxId, &len, buf);
+                if (readStatus != CAN_OK) {
+                    continue;
+                }
+                
+                // Prüfen, ob es sich um eine Antwort auf unsere SDO-Anfrage handelt
+                if (rxId == (0x580 + id)) {
+                    Serial.printf("[INFO] Node %d antwortet bei %d kbps! (Versuch %d)\n", 
+                                  id, baudrate, attempt+1);
+                    return true;
+                }
+            }
+        }
+        
+        // Pause zwischen Versuchen
+        if (attempt < maxAttempts - 1) {
+            delay(30);
+        }
+    }
     
     return false;
 }
