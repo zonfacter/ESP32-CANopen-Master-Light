@@ -40,22 +40,6 @@ bool systemError = false;
 bool autoBaudrateRequest = false;
 unsigned long lastErrorTime = 0;
 
-// CAN-Baudratenkonstanten definieren
-// Diese sollten normalerweise in der MCP_CAN-Bibliothek definiert sein
-#ifndef CAN_10KBPS
-enum CAN_SPEED {
-    CAN_10KBPS,
-    CAN_20KBPS,
-    CAN_50KBPS,
-    CAN_100KBPS,
-    CAN_125KBPS,
-    CAN_250KBPS,
-    CAN_500KBPS,
-    CAN_800KBPS,
-    CAN_1000KBPS
-};
-#endif
-
 // Funktionsdeklarationen
 void showMessage(const char* msg);
 void showStatusMessage(const char* title, const char* message, bool isError = false);
@@ -79,7 +63,8 @@ bool changeBaudrate(uint8_t nodeId, uint8_t baudrateIndex);
 bool updateESP32CANBaudrate(int newBaudrate);
 uint8_t getBaudrateIndex(int baudrateKbps);
 
-CAN_SPEED convertBaudrateToCANSpeed(int baudrateKbps);
+// Funktionsdeklaration
+uint8_t convertBaudrateToCANSpeed(int baudrateKbps);
 void changeCommunicationSettings(uint8_t newNodeId, int newBaudrateKbps);
 
 // Implementierung der Preferences-Funktionen
@@ -145,32 +130,8 @@ void setup() {
     delay(1000);
     printHelpMenu();
 }
-// Speichern der Einstellungen im nichtflüchtigen Speicher
-void saveSettings() {
-    preferences.begin("canscanner", false);
-    preferences.putUInt("nodeId", currentNodeId);
-    preferences.putInt("baudrate", currentBaudrate);
-    preferences.putUInt("scanStart", scanStart);
-    preferences.putUInt("scanEnd", scanEnd);
-    preferences.end();
-    
-    Serial.println("[INFO] Einstellungen gespeichert");
-}
 
-// Laden der Einstellungen aus dem nichtflüchtigen Speicher
-void loadSettings() {
-    preferences.begin("canscanner", false);
-    currentNodeId = preferences.getUInt("nodeId", 127);  // Default: 127
-    currentBaudrate = preferences.getInt("baudrate", 125); // Default: 125 kbps
-    scanStart = preferences.getUInt("scanStart", 1);     // Default: 1
-    scanEnd = preferences.getUInt("scanEnd", 10);       // Default: 10
-    preferences.end();
-    
-    Serial.println("[INFO] Einstellungen geladen");
-    
-    // Ausgabe der aktuellen Einstellungen
-    printCurrentSettings();
-}
+
 void loop() {
     // Fehlerbehandlung - wenn systemError gesetzt ist, prüfen wir, ob wir zurücksetzen können
     if (systemError) {
@@ -618,36 +579,6 @@ void systemReset() {
 }
 
 // ===================================================================================
-// Funktion: saveSettings
-// Beschreibung: Speichert die aktuellen Einstellungen im nicht-flüchtigen Speicher
-// ===================================================================================
-void saveSettings() {
-    preferences.begin("canscanner", false);
-    preferences.putUInt("nodeId", currentNodeId);
-    preferences.putInt("baudrate", currentBaudrate);
-    preferences.putInt("scanStart", scanStart);
-    preferences.putInt("scanEnd", scanEnd);
-    preferences.end();
-    
-    Serial.println("[INFO] Einstellungen gespeichert");
-}
-
-// ===================================================================================
-// Funktion: loadSettings
-// Beschreibung: Lädt Einstellungen aus dem nicht-flüchtigen Speicher
-// ===================================================================================
-void loadSettings() {
-    preferences.begin("canscanner", false);
-    currentNodeId = preferences.getUInt("nodeId", 127);  // Default: 127
-    currentBaudrate = preferences.getInt("baudrate", 125); // Default: 125 kbps
-    scanStart = preferences.getInt("scanStart", 1);     // Default: 1
-    scanEnd = preferences.getInt("scanEnd", 10);       // Default: 10
-    preferences.end();
-    
-    Serial.println("[INFO] Einstellungen geladen");
-}
-
-// ===================================================================================
 // Funktion: processCANMessage
 // Beschreibung: Verarbeitet empfangene CAN-Nachrichten
 // ===================================================================================
@@ -924,11 +855,10 @@ uint8_t getBaudrateIndex(int baudrateKbps) {
 // Funktion: convertBaudrateToCANSpeed
 // Beschreibung: Konvertiert Baudrate in kbps zu CAN_SPEED-Enum für MCP_CAN
 // ===================================================================================
-// Korrigierte Funktion für die Umwandlung der Baudrate
 uint8_t convertBaudrateToCANSpeed(int baudrateKbps) {
     switch(baudrateKbps) {
         case 1000: return CAN_1000KBPS;
-        case 800: return CAN_800KBPS; 
+        case 800: return CAN_500KBPS; // Modified: Using CAN_500KBPS instead of undefined CAN_800KBPS
         case 500: return CAN_500KBPS;
         case 250: return CAN_250KBPS;
         case 125: return CAN_125KBPS;
@@ -1041,7 +971,6 @@ void changeCommunicationSettings(uint8_t newNodeId, int newBaudrateKbps) {
     // Wichtiger Hinweis: Der Motor muss neu gestartet werden, damit die Änderungen wirksam werden
     Serial.println("HINWEIS: Schalten Sie den Motor aus und wieder ein, damit die Änderungen wirksam werden!");
 }
-
 // ===================================================================================
 // Funktion: autoBaudrateDetection
 // Beschreibung: Automatische Baudratenerkennung durch Testen verschiedener Baudraten
