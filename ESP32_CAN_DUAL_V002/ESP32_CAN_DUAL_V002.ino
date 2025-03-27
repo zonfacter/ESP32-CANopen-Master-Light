@@ -426,7 +426,7 @@ void printHelpMenu() {
     Serial.println("  monitor on    → Live Monitor aktivieren");
     Serial.println("  monitor off   → Live Monitor deaktivieren");
     Serial.println("  change a b    → Node-ID a → b ändern (SDO)");
-    Serial.println("  baudrate x    → Baudrate ändern (x in kbps: 10, 20, 50, 100, 125, 250, 500, 800, 1000)");
+    Serial.println("  baudrate nodid x    → Baudrate ändern (x in kbps: 10, 20, 50, 100, 125, 250, 500, 800, 1000)");
     Serial.println("  auto          → Automatische Baudratenerkennung starten");
     Serial.println("  info          → Aktuelle Einstellungen anzeigen");
     Serial.println("  save          → Einstellungen speichern");
@@ -441,24 +441,38 @@ void printHelpMenu() {
 // Beschreibung: Verarbeitet den Befehl zum Ändern der Baudrate
 // ===================================================================================
 void handleBaudrateCommand(String command) {
-    // Zuerst den Befehlsbestandteil entfernen
-    int idx = command.indexOf(' ');
-    if (idx > 0) {
-        // Den Baudratenwert extrahieren
-        int baudrate = command.substring(idx + 1).toInt();
+    // Format: baudrate nodeID baudrate
+    int firstSpace = command.indexOf(' ');
+    if (firstSpace > 0) {
+        int secondSpace = command.indexOf(' ', firstSpace + 1);
         
-        // Prüfen, ob die Baudrate gültig ist
-        if (isValidBaudrate(baudrate)) {
-            Serial.printf("[INFO] Starte Baudratenwechsel zu %d kbps\n", baudrate);
-            changeCommunicationSettings(currentNodeId, baudrate);
+        // Prüfen, ob beide Parameter vorhanden sind
+        if (secondSpace > 0) {
+            // Die NodeID extrahieren
+            int targetNodeId = command.substring(firstSpace + 1, secondSpace).toInt();
+            
+            // Die Baudrate extrahieren
+            int baudrate = command.substring(secondSpace + 1).toInt();
+            
+            // Prüfen, ob die NodeID und Baudrate gültig sind
+            if (targetNodeId >= 1 && targetNodeId <= 127 && isValidBaudrate(baudrate)) {
+                Serial.printf("[INFO] Starte Baudratenwechsel für Node %d zu %d kbps\n", targetNodeId, baudrate);
+                changeCommunicationSettings(targetNodeId, baudrate);
+            } else {
+                if (!isValidBaudrate(baudrate)) {
+                    Serial.println("[FEHLER] Ungültige Baudrate! Gültige Werte: 10, 20, 50, 100, 125, 250, 500, 800, 1000 kbps");
+                }
+                if (targetNodeId < 1 || targetNodeId > 127) {
+                    Serial.println("[FEHLER] Ungültige Node-ID! Gültige Werte: 1-127");
+                }
+            }
         } else {
-            Serial.println("[FEHLER] Ungültige Baudrate! Gültige Werte: 10, 20, 50, 100, 125, 250, 500, 800, 1000 kbps");
+            Serial.println("[FEHLER] Falsche Syntax. Korrekt: baudrate nodeID baudrate (z.B. baudrate 7 500)");
         }
     } else {
-        Serial.println("[FEHLER] Falsche Syntax. Korrekt: baudrate x (wobei x die Baudrate in kbps ist)");
+        Serial.println("[FEHLER] Falsche Syntax. Korrekt: baudrate nodeID baudrate (z.B. baudrate 7 500)");
     }
 }
-
 // ===================================================================================
 // Funktion: handleChangeCommand
 // Beschreibung: Verarbeitet den Befehl zum Ändern der Node-ID
@@ -474,7 +488,9 @@ void handleChangeCommand(String command) {
             // Wertebegrenzung und Plausibilitätsprüfung
             if (oldId >= 1 && oldId <= 127 && newId >= 1 && newId <= 127) {
                 Serial.printf("[INFO] Starte Node-ID Änderung von %d nach %d\n", oldId, newId);
-                changeCommunicationSettings(oldId, currentBaudrate);
+                
+                // Korrekte Parameter übergeben: oldId statt currentNodeId
+                changeNodeId(oldId, newId);
             } else {
                 Serial.println("[FEHLER] Ungültige Node-ID! Gültige Werte: 1-127");
             }
@@ -485,7 +501,6 @@ void handleChangeCommand(String command) {
         Serial.println("[FEHLER] Falsche Syntax. Korrekt: change alter_id neue_id");
     }
 }
-
 // ===================================================================================
 // Funktion: handleRangeCommand
 // Beschreibung: Verarbeitet den Befehl zum Ändern des Scan-Bereichs
@@ -819,7 +834,7 @@ bool changeBaudrate(uint8_t nodeId, uint8_t baudrateIndex) {
     
     // Schritt 2: Neue Baudrate setzen
     Serial.printf("[DEBUG] Setze neue Baudrate mit Index: %d\n", baudrateIndex);
-    if (!canopen.writeSDO(nodeId, 0x2000, 0x02, baudrateIndex, 4)) { 
+    if (!canopen.writeSDO(nodeId, 0x2000, 0x03, baudrateIndex, 4)) { 
         Serial.println("[FEHLER] Baudrate ändern fehlgeschlagen!");
         return false;
     }
@@ -906,14 +921,14 @@ bool updateESP32CANBaudrate(int newBaudrate) {
 // Funktion: changeCommunicationSettings
 // Beschreibung: Umfassende Funktion zum Ändern der Kommunikationseinstellungen
 // ===================================================================================
-void changeCommunicationSettings(uint8_t newNodeId, int newBaudrateKbps) {
+void changeCommunicationSettings(uint8_t targetNodeId, int newBaudrateKbps) {
     uint8_t baudrateIndex = getBaudrateIndex(newBaudrateKbps);
     
     Serial.println("=======================================");
     Serial.printf("Ändere Einstellungen von NodeID: %d, Baudrate: %d kbps\n", 
-                  currentNodeId, currentBaudrate);
+                  targetNodeId, currentBaudrate);
     Serial.printf("Zu NodeID: %d, Baudrate: %d kbps\n", 
-                  newNodeId, newBaudrateKbps);
+                  targetNodeId, newBaudrateKbps);
     Serial.println("=======================================");
     
     bool baudrateChanged = false;
@@ -921,7 +936,7 @@ void changeCommunicationSettings(uint8_t newNodeId, int newBaudrateKbps) {
     
     // Zuerst Baudrate ändern, wenn sie sich unterscheidet
     if (newBaudrateKbps != currentBaudrate) {
-        if (changeBaudrate(currentNodeId, baudrateIndex)) {
+        if (changeBaudrate(targetNodeId, baudrateIndex)) {
             // ESP32-Baudrate aktualisieren
             if (updateESP32CANBaudrate(newBaudrateKbps)) {
                 baudrateChanged = true;
@@ -934,11 +949,13 @@ void changeCommunicationSettings(uint8_t newNodeId, int newBaudrateKbps) {
         }
     }
     
-    // Jetzt ggf. Node-ID ändern
-    if (newNodeId != currentNodeId) {
-        if (canopen.changeNodeId(currentNodeId, newNodeId, true)) {
+    // Jetzt ggf. Node-ID ändern, wenn die Ziel-ID nicht der aktuellen ID entspricht
+    // und die angegebene Node ID gleich der aktuell eingestellten ist
+    if (targetNodeId == currentNodeId && targetNodeId != newBaudrateKbps) {
+        Serial.printf("[INFO] Ändere Node-ID von %d auf %d...\n", targetNodeId, newBaudrateKbps);
+        if (canopen.changeNodeId(targetNodeId, newBaudrateKbps, true)) {
             nodeIdChanged = true;
-            currentNodeId = newNodeId;
+            currentNodeId = newBaudrateKbps;
             Serial.println("[ERFOLG] Node-ID-Änderung abgeschlossen");
             
             // Einstellungen speichern
