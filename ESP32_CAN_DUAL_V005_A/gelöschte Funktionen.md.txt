@@ -1,0 +1,500 @@
+// ===================================================================================
+// Funktion: decodeCANMessage
+// Beschreibung: Dekodiert und interpretiert CAN-Nachrichten nach CANopen-Standard
+// ===================================================================================
+void decodeCANMessage(unsigned long rxId, uint8_t nodeId, uint16_t baseId, byte* buf, byte len) {
+    // Bekannte Nachrichtentypen identifizieren und interpretieren
+    if (rxId == 0x000) {
+        Serial.print("  [NMT Broadcast]");
+        decodeNMTCommand(buf, len);
+    } else if (baseId == COB_ID_TPDO1) {
+        Serial.printf("  [PDO1 von Node %d]", nodeId);
+    } else if (baseId == COB_ID_TPDO2) {
+        Serial.printf("  [PDO2 von Node %d]", nodeId);
+    } else if (baseId == COB_ID_TPDO3) {
+        Serial.printf("  [PDO3 von Node %d]", nodeId);
+    } else if (baseId == COB_ID_TPDO4) {
+        Serial.printf("  [PDO4 von Node %d]", nodeId);
+    } else if (baseId == COB_ID_TSDO_BASE) {
+        Serial.printf("  [SDO Response von Node %d]", nodeId);
+        
+        // SDO-Antwort interpretieren
+        if (len >= 4) {
+            byte cs = buf[0] >> 5; // Command Specifier
+            if (cs == 4) {
+                Serial.print(" (Abort)");
+                if (len >= 8) {
+                    uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
+                    Serial.printf(" Code: 0x%08X", abortCode);
+                }
+            } else if (cs == 3) {
+                Serial.print(" (Upload)");
+            } else if (cs == 1) {
+                Serial.print(" (Download)");
+            }
+        }
+    } else if (baseId == COB_ID_RSDO_BASE) {
+        Serial.printf("  [SDO Request an Node %d]", nodeId);
+    } else if (baseId == COB_ID_HB_BASE) {
+        if (len > 0 && buf[0] == 0x00) {
+            Serial.printf("  [Bootup von Node %d]", nodeId);
+        } else if (len > 0) {
+            Serial.printf("  [Heartbeat von Node %d, Status: %d]", nodeId, buf[0]);
+            decodeNMTState(buf[0]);
+        }
+    } else if (baseId == COB_ID_EMCY_BASE) {
+        Serial.printf("  [Emergency von Node %d]", nodeId);
+        if (len >= 2) {
+            uint16_t errorCode = buf[0] | (buf[1] << 8);
+            Serial.printf(" Error: 0x%04X", errorCode);
+        }
+    } else if (rxId == 0x80) {
+        Serial.print("  [SYNC]");
+    } else if (rxId == 0x100) {
+        Serial.print("  [TIME]");
+    }
+}
+
+// ===================================================================================
+// Funktion: decodeNMTState
+// Beschreibung: Dekodiert den NMT-Zustand eines Knotens
+// ===================================================================================
+void decodeNMTState(byte state) {
+    switch(state) {
+        case 0:
+            Serial.print(" (Initialisierung)");
+            break;
+        case 4:
+            Serial.print(" (Stopped)");
+            break;
+        case 5:
+            Serial.print(" (Operational)");
+            break;
+        case 127:
+            Serial.print(" (Pre-Operational)");
+            break;
+        default:
+            Serial.printf(" (Unbekannt: %d)", state);
+            break;
+    }
+}
+
+// ===================================================================================
+// Funktion: decodeNMTCommand
+// Beschreibung: Dekodiert NMT-Befehle
+// ===================================================================================
+void decodeNMTCommand(byte* buf, byte len) {
+    if (len >= 2) {
+        byte command = buf[0];
+        byte targetNode = buf[1];
+        
+        switch(command) {
+            case NMT_CMD_START_NODE:
+                Serial.printf(" Start Node %d", targetNode);
+                break;
+            case NMT_CMD_STOP_NODE:
+                Serial.printf(" Stop Node %d", targetNode);
+                break;
+            case NMT_CMD_ENTER_PREOP:
+                Serial.printf(" Enter Pre-Operational Node %d", targetNode);
+                break;
+            case NMT_CMD_RESET_NODE:
+                Serial.printf(" Reset Node %d", targetNode);
+                break;
+            case NMT_CMD_RESET_COMM:
+                Serial.printf(" Reset Communication Node %d", targetNode);
+                break;
+            default:
+                Serial.printf(" Unbekannter Befehl: 0x%02X für Node %d", command, targetNode);
+                break;
+        }
+    }
+}
+
+// ===================================================================================
+// Funktion: decodeSDOAbortCode
+// Beschreibung: Hilfsfunktion zur Dekodierung von SDO-Abortcodes
+// ===================================================================================
+void decodeSDOAbortCode(uint32_t abortCode) {
+    switch(abortCode) {
+        case 0x05030000:
+            Serial.println("[FEHLER] Toggle-Bit nicht alterniert");
+            break;
+        case 0x05040001:
+            Serial.println("[FEHLER] Client/Server-Befehlsspezifizierer ungültig oder unbekannt");
+            break;
+        case 0x06010000:
+            Serial.println("[FEHLER] Zugriff auf ein Objekt nicht unterstützt");
+            break;
+        case 0x06010001:
+            Serial.println("[FEHLER] Schreibversuch auf ein Nur-Lese-Objekt");
+            break;
+        case 0x06010002:
+            Serial.println("[FEHLER] Leseversuch auf ein Nur-Schreib-Objekt");
+            break;
+        case 0x06020000:
+            Serial.println("[FEHLER] Objekt im Objektverzeichnis nicht vorhanden");
+            break;
+        case 0x06040041:
+            Serial.println("[FEHLER] Objekt kann nicht auf diese PDO gemappt werden");
+            break;
+        case 0x06040042:
+            Serial.println("[FEHLER] Die Anzahl und Länge der Objekte würden die PDO-Länge überschreiten");
+            break;
+        case 0x06040043:
+            Serial.println("[FEHLER] Allgemeiner Parameter-Inkompatibilitätsgrund");
+            break;
+        case 0x06040047:
+            Serial.println("[FEHLER] Allgemeiner interner Inkompatibilitätsfehler im Gerät");
+            break;
+        case 0x06060000:
+            Serial.println("[FEHLER] Zugriff wegen Hardwarefehler fehlgeschlagen");
+            break;
+        case 0x06070010:
+            Serial.println("[FEHLER] Datentyp stimmt nicht überein, Länge des Parameters stimmt nicht überein");
+            break;
+        case 0x06070012:
+            Serial.println("[FEHLER] Datentyp stimmt nicht überein, Länge des Parameters zu groß");
+            break;
+        case 0x06070013:
+            Serial.println("[FEHLER] Datentyp stimmt nicht überein, Länge des Parameters zu klein");
+            break;
+        case 0x06090011:
+            Serial.println("[FEHLER] Unterobjekt nicht vorhanden");
+            break;
+        case 0x06090030:
+            Serial.println("[FEHLER] Wert des Parameters außerhalb des erlaubten Bereichs");
+            break;
+        case 0x06090031:
+            Serial.println("[FEHLER] Wert des Parameters zu groß");
+            break;
+        case 0x06090032:
+            Serial.println("[FEHLER] Wert des Parameters zu klein");
+            break;
+        case 0x08000000:
+            Serial.println("[FEHLER] Allgemeiner Fehler");
+            break;
+        case 0x08000020:
+            Serial.println("[FEHLER] Datentransfer oder Speicherung nicht möglich");
+            break;
+        case 0x08000021:
+            Serial.println("[FEHLER] Datentransfer oder Speicherung nicht möglich wegen lokalem Kontrollproblem");
+            break;
+        case 0x08000022:
+            Serial.println("[FEHLER] Datentransfer oder Speicherung nicht möglich wegen aktuellem Gerätezustand");
+            break;
+        default:
+            Serial.printf("[FEHLER] Unbekannter SDO-Abortcode: 0x%08X\n", abortCode);
+            break;
+    }
+}
+
+// ===================================================================================
+// Funktion: processCANMessage mit Filterunterstützung
+// Beschreibung: Verarbeitet empfangene CAN-Nachrichten und wendet Filter an
+// ===================================================================================
+void processCANMessage() {
+    if (!canInterface->messageAvailable()) {
+        return;
+    }
+    
+    uint32_t rxId;
+    uint8_t ext = 0;
+    uint8_t len = 0;
+    uint8_t buf[8];
+    
+    // Nachricht über das Interface empfangen
+    if (!canInterface->receiveMessage(&rxId, &ext, &len, buf)) {
+        Serial.println("[FEHLER] Fehler beim Empfangen der CAN-Nachricht");
+        return;
+    }
+
+    uint8_t nodeId = rxId & 0x7F;
+    uint16_t baseId = rxId & 0x780;
+    
+    // Filter anwenden
+    if (filterEnabled) {
+        bool passFilter = true;
+        
+        // ID-Filter
+        if (rxId < filterIdMin || rxId > filterIdMax) {
+            passFilter = false;
+        }
+        
+        // Node-Filter
+        if (filterNodeEnabled && nodeId != filterNodeId) {
+            passFilter = false;
+        }
+        
+        // Typ-Filter
+        switch (filterType) {
+            case 1: // PDO Filter
+                if (!(baseId >= COB_ID_TPDO1 && baseId <= COB_ID_RPDO4)) {
+                    passFilter = false;
+                }
+                break;
+            case 2: // SDO Filter
+                if (!(baseId == COB_ID_TSDO_BASE || baseId == COB_ID_RSDO_BASE)) {
+                    passFilter = false;
+                }
+                break;
+            case 3: // EMCY Filter
+                if (baseId != COB_ID_EMCY_BASE) {
+                    passFilter = false;
+                }
+                break;
+            case 4: // NMT Filter
+                if (rxId != COB_ID_NMT) {
+                    passFilter = false;
+                }
+                break;
+            case 5: // Heartbeat Filter
+                if (baseId != COB_ID_HB_BASE) {
+                    passFilter = false;
+                }
+                break;
+            case 0: // Kein Typ-Filter
+            default:
+                // Alle Typen durchlassen
+                break;
+        }
+        
+        // Wenn der Filter nicht bestanden wurde, Nachricht überspringen
+        if (!passFilter) {
+            return;
+        }
+    }
+
+    // Formatierte Ausgabe der CAN-Nachricht
+    Serial.printf("[CAN] ID: 0x%03lX Len: %d →", rxId, len);
+    for (int i = 0; i < len; i++) {
+        Serial.printf(" %02X", buf[i]);
+    }
+
+    // Bekannte Nachrichtentypen identifizieren und interpretieren
+    decodeCANMessage(rxId, nodeId, baseId, buf, len);
+    
+    Serial.println();
+}
+
+// ===================================================================================
+// Funktion: handleSerialCommands (aktualisiert mit Unterstützung für Moduswechsel)
+// Beschreibung: Verarbeitet Befehle, die über die serielle Schnittstelle empfangen werden
+// ===================================================================================
+// Serielle Befehle verarbeiten
+void handleSerialCommands() {
+    if (Serial.available()) {
+        // Serielle Steuerung wird aktiv
+        activeSource = SOURCE_SERIAL;
+        lastActivityTime = millis();
+        
+        String command = Serial.readStringUntil('\n');
+        command.trim();  // Leerzeichen und Zeilenumbrüche entfernen
+        
+        // Befehl analysieren und ausführen
+        if (command.startsWith("scan")) {
+            // Beispiel: scan 1 127
+            int startNode = 1;
+            int endNode = 127;
+            
+            // Parameter extrahieren, wenn vorhanden
+            int firstSpace = command.indexOf(' ');
+            if (firstSpace > 0) {
+                int secondSpace = command.indexOf(' ', firstSpace + 1);
+                if (secondSpace > 0) {
+                    startNode = command.substring(firstSpace + 1, secondSpace).toInt();
+                    endNode = command.substring(secondSpace + 1).toInt();
+                }
+            }
+            
+            // Werte in die Eingabestruktur übernehmen
+            inputValues.scanStartNode = startNode;
+            inputValues.scanEndNode = endNode;
+            
+            // Scan starten
+            Serial.print("Starte Scan von Node ");
+            Serial.print(startNode);
+            Serial.print(" bis ");
+            Serial.println(endNode);
+            
+            // Scan ausführen
+            scanStart = startNode;
+            scanEnd = endNode;
+            scanning = true;
+            
+            // Scan-Prozess anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else if (command.startsWith("baudrate")) {
+            // Beispiel: baudrate 125
+            int baudrate = 125;
+            
+            // Parameter extrahieren, wenn vorhanden
+            int space = command.indexOf(' ');
+            if (space > 0) {
+                baudrate = command.substring(space + 1).toInt();
+            }
+            
+            // Baudrate ändern
+            Serial.print("Setze Baudrate auf ");
+            Serial.print(baudrate);
+            Serial.println(" kbps");
+            
+            // Baudrate-Änderung ausführen
+            updateESP32CANBaudrate(baudrate);
+            
+            // Baudratenindex aktualisieren
+            inputValues.selectedBaudrate = getBaudrateIndex(baudrate);
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else if (command.startsWith("changeid")) {
+            // Beispiel: changeid 5 10
+            int oldId = 1;
+            int newId = 2;
+            
+            // Parameter extrahieren, wenn vorhanden
+            int firstSpace = command.indexOf(' ');
+            if (firstSpace > 0) {
+                int secondSpace = command.indexOf(' ', firstSpace + 1);
+                if (secondSpace > 0) {
+                    oldId = command.substring(firstSpace + 1, secondSpace).toInt();
+                    newId = command.substring(secondSpace + 1).toInt();
+                }
+            }
+            
+            // Werte in die Eingabestruktur übernehmen
+            inputValues.oldNodeId = oldId;
+            inputValues.newNodeId = newId;
+            
+            // Node-ID ändern
+            Serial.print("Aendere Node-ID von ");
+            Serial.print(oldId);
+            Serial.print(" zu ");
+            Serial.println(newId);
+            
+            // Node-ID ändern
+            changeNodeId(oldId, newId);
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else if (command.startsWith("monitor")) {
+            // Beispiel: monitor on/off
+            bool enable = true;
+            
+            // Parameter extrahieren, wenn vorhanden
+            int space = command.indexOf(' ');
+            if (space > 0) {
+                String param = command.substring(space + 1);
+                if (param == "off") {
+                    enable = false;
+                }
+            }
+            
+            // Monitor ein-/ausschalten
+            liveMonitor = enable;
+            Serial.print("Live-Monitor: ");
+            Serial.println(enable ? "Ein" : "Aus");
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                if (enable) {
+                    displayActionScreen("Live-Monitor", "CAN-Daten...", 1000);
+                } else {
+                    displaySerialModeScreen();
+                }
+            }
+        }
+        else if (command.startsWith("filter")) {
+            // Beispiel: filter on/off
+            bool enable = true;
+            
+            // Parameter extrahieren, wenn vorhanden
+            int space = command.indexOf(' ');
+            if (space > 0) {
+                String param = command.substring(space + 1);
+                if (param == "off") {
+                    enable = false;
+                }
+            }
+            
+            // Filter ein-/ausschalten
+            filterEnabled = enable;
+            Serial.print("Filter: ");
+            Serial.println(enable ? "Ein" : "Aus");
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else if (command.startsWith("help")) {
+            // Hilfe anzeigen
+            Serial.println("Verfuegbare Befehle:");
+            Serial.println("scan <start> <end> - Scannt CANopen-Nodes im angegebenen Bereich");
+            Serial.println("baudrate <kbps> - Aendert die CAN-Baudrate");
+            Serial.println("changeid <alt> <neu> - Aendert die Node-ID");
+            Serial.println("monitor on/off - Schaltet den Live-Monitor ein/aus");
+            Serial.println("filter on/off - Schaltet den Filter ein/aus");
+            Serial.println("help - Zeigt diese Hilfe an");
+            Serial.println("menu - Wechselt zur Menue-Steuerung");
+            Serial.println("info - Zeigt System-Informationen an");
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else if (command.startsWith("menu")) {
+            // Zur Menüsteuerung wechseln
+            Serial.println("Wechsle zur Menue-Steuerung");
+            
+            // Menü anzeigen
+            activeSource = SOURCE_BUTTON;
+            lastActivityTime = millis();
+            
+            if (displayInterface != nullptr) {
+                displayMenu();
+            }
+        }
+        else if (command.startsWith("info")) {
+            // System-Informationen anzeigen
+            Serial.println("System-Informationen:");
+            Serial.print("Aktuelle Baudrate: ");
+            Serial.print(currentBaudrate);
+            Serial.println(" kbps");
+            Serial.print("Scan-Bereich: ");
+            Serial.print(inputValues.scanStartNode);
+            Serial.print(" - ");
+            Serial.println(inputValues.scanEndNode);
+            Serial.print("Filter: ");
+            Serial.println(filterEnabled ? "Ein" : "Aus");
+            Serial.print("System-Status: ");
+            Serial.println(systemError ? "Fehler" : "OK");
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+        else {
+            // Unbekannter Befehl
+            Serial.print("Unbekannter Befehl: ");
+            Serial.println(command);
+            Serial.println("Gib 'help' ein fuer Hilfe");
+            
+            // Status anzeigen
+            if (displayInterface != nullptr) {
+                displaySerialModeScreen();
+            }
+        }
+    }
+}
