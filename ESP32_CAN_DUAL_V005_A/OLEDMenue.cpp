@@ -1028,6 +1028,10 @@ void displaySystemInfo() {
     displayMenu();
 }
 
+bool hasElapsed(unsigned long startTime, unsigned long durationMs) {
+    return (millis() - startTime) >= durationMs;
+}
+
 // Externe Funktionen, die von der Hauptapp aufgerufen werden
 
 // Hauptschleife für die Menüsteuerung
@@ -1053,9 +1057,7 @@ void menuLoop() {
         processCANMessage();
     }
 
-    const unsigned long currentTime = millis();
-    const unsigned long versionDisplayElapsed = currentTime - versionDisplayStart;
-    if (showingVersion && versionDisplayElapsed >= VERSION_DISPLAY_TIMEOUT_MS) {
+    if (showingVersion && hasElapsed(versionDisplayStart, VERSION_DISPLAY_TIMEOUT_MS)) {
         showingVersion = false;
         displayMenu();
         activeSource = SOURCE_BUTTON;

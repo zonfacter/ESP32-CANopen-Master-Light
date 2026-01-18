@@ -47,6 +47,7 @@ extern void printCurrentSettings();
 extern void systemReset();
 
 constexpr size_t COMMAND_BUFFER_SIZE = 128;
+constexpr size_t COMMAND_DISCARD_LIMIT = COMMAND_BUFFER_SIZE * 4;
 
 // Hilfsfunktion zum Parsen von Befehlsparametern
 bool parseIntParams(String command, int& first, int& second) {
@@ -86,7 +87,7 @@ bool readSerialCommand(String& command) {
             commandIndex = 0;
             // Rest der Zeile verwerfen
             size_t discardedCount = 0;
-            while (Serial.available() && discardedCount < COMMAND_BUFFER_SIZE) {
+            while (Serial.available() && discardedCount < COMMAND_DISCARD_LIMIT) {
                 char discard = Serial.read();
                 discardedCount++;
                 if (discard == '\n' || discard == '\r') {
