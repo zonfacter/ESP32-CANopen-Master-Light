@@ -84,6 +84,7 @@ bool readSerialCommand(String& command) {
             commandBuffer[commandIndex++] = currentChar;
         } else {
             commandIndex = 0;
+            // Rest der Zeile verwerfen
             while (Serial.available()) {
                 char discard = Serial.read();
                 if (discard == '\n' || discard == '\r') {

@@ -1054,7 +1054,7 @@ void menuLoop() {
     }
 
     const unsigned long versionDisplayElapsed = millis() - versionDisplayStart;
-    if (showingVersion && versionDisplayElapsed >= static_cast<unsigned long>(VERSION_DISPLAY_TIMEOUT_MS)) {
+    if (showingVersion && versionDisplayElapsed >= VERSION_DISPLAY_TIMEOUT_MS) {
         showingVersion = false;
         displayMenu();
         activeSource = SOURCE_BUTTON;
