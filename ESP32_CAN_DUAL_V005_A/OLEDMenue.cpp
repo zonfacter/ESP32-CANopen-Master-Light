@@ -562,7 +562,7 @@ void displayMenu() {
         int menuAreaHeight = displayHeight - 12;
         int barHeight = menuAreaHeight / currentMenu.itemCount;
         int barPos = (menuAreaHeight - barHeight) * currentMenuIndex / (currentMenu.itemCount - 1);
-        int barX = max(0, displayWidth - 1);
+        int barX = displayWidth - 1;
         displayInterface->drawRect(barX, 12, 1, menuAreaHeight, 1);
         displayInterface->fillRect(barX, 12 + barPos, 1, barHeight, 1);
     }
@@ -1053,7 +1053,8 @@ void menuLoop() {
         processCANMessage();
     }
 
-    if (showingVersion && (millis() - versionDisplayStart >= VERSION_DISPLAY_TIMEOUT_MS)) {
+    const unsigned long versionDisplayElapsed = millis() - versionDisplayStart;
+    if (showingVersion && versionDisplayElapsed >= static_cast<unsigned long>(VERSION_DISPLAY_TIMEOUT_MS)) {
         showingVersion = false;
         displayMenu();
         activeSource = SOURCE_BUTTON;
