@@ -51,7 +51,7 @@ Diese Aktualisierung führt Systemkonfigurationsprofile ein, um Hardware-Kompati
 
 4. **Aktualisiere das Changelog**
    - Öffne die Datei `changelog.md`
-    - Füge am Anfang (vor Version V005) den Inhalt des Artefakts `changelog-update` ein
+    - Füge am Anfang (vor Version V005_A) den Inhalt des Artefakts `changelog-update` ein
 
 ## Prüfung nach der Integration
 
