@@ -85,8 +85,10 @@ bool readSerialCommand(String& command) {
         } else {
             commandIndex = 0;
             // Rest der Zeile verwerfen
-            while (Serial.available()) {
+            size_t discardedCount = 0;
+            while (Serial.available() && discardedCount < COMMAND_BUFFER_SIZE) {
                 char discard = Serial.read();
+                discardedCount++;
                 if (discard == '\n' || discard == '\r') {
                     break;
                 }

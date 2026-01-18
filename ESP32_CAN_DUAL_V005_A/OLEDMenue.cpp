@@ -1053,7 +1053,8 @@ void menuLoop() {
         processCANMessage();
     }
 
-    const unsigned long versionDisplayElapsed = millis() - versionDisplayStart;
+    const unsigned long currentTime = millis();
+    const unsigned long versionDisplayElapsed = currentTime - versionDisplayStart;
     if (showingVersion && versionDisplayElapsed >= VERSION_DISPLAY_TIMEOUT_MS) {
         showingVersion = false;
         displayMenu();
