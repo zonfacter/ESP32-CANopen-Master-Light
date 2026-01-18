@@ -10,6 +10,7 @@
 ControlSource activeSource = SOURCE_NONE;
 unsigned long lastActivityTime = 0;
 const unsigned long SOURCE_TIMEOUT = 3000; // 3 Sekunden Timeout
+constexpr int VERSION_DISPLAY_TIMEOUT_MS = 2000;
 
 // Zustandsvariablen für Buttons
 bool buttonUpPressed = false;
@@ -36,6 +37,8 @@ int currentInputValue = 0;
 int inputMin = 0;
 int inputMax = 127;
 int inputStep = 1;
+bool showingVersion = false;
+unsigned long versionDisplayStart = 0;
 
 // Externe Referenzen zu Variablen aus dem Hauptprogramm
 extern DisplayInterface* displayInterface;
@@ -47,6 +50,9 @@ extern uint8_t scanStart;
 extern uint8_t scanEnd;
 extern int currentBaudrate;
 extern bool filterEnabled;
+extern const char* getAppVersion();
+extern int getDisplayWidth();
+extern int getDisplayHeight();
 
 // Vorwärtsdeklarationen externer Funktionen
 void scanNodes(int startID, int endID);
@@ -60,6 +66,7 @@ extern void handleSerialCommands();
 extern void processCANScanning();
 extern void processAutoBaudrate();
 extern void processCANMessage();
+void showVersionAction();
 
 
 // Menü-Definitionen
@@ -159,7 +166,7 @@ MenuItem systemMenuItems[] = {
 // Hilfe-Menü-Elemente
 MenuItem helpMenuItems[] = {
     {"Menue-Hilfe", MENU_HELP, ACTION_EXECUTE, NULL}, // Implementierung fehlt
-    {"Version", MENU_HELP, ACTION_EXECUTE, NULL}, // Implementierung fehlt
+    {"Version", MENU_HELP, ACTION_EXECUTE, showVersionAction},
     {"Zurueck", MENU_MAIN, ACTION_BACK, NULL}
 };
 
@@ -517,13 +524,16 @@ void displayMenu() {
     // Display leeren
     displayInterface->clear();
     
+    const int displayWidth = getDisplayWidth();
+    const int displayHeight = getDisplayHeight();
+
     // Menütitel anzeigen
     displayInterface->setCursor(0, 0);
     displayInterface->setTextSize(1);
     displayInterface->println(currentMenu.title);
     
     // Trennlinie
-    displayInterface->drawLine(0, 10, 128, 10, 1);
+    displayInterface->drawLine(0, 10, displayWidth, 10, 1);
     
     // Sichtbare Menüeinträge bestimmen (max. 5)
     int startItem = max(0, currentMenuIndex - 2);
@@ -535,7 +545,7 @@ void displayMenu() {
         
         // Ausgewählten Eintrag markieren
         if (i == currentMenuIndex) {
-            displayInterface->fillRect(0, 12 + (i - startItem) * 10, 128, 10, 1);
+            displayInterface->fillRect(0, 12 + (i - startItem) * 10, displayWidth, 10, 1);
             displayInterface->setTextColor(0);
         } else {
             displayInterface->setTextColor(1);
@@ -549,10 +559,12 @@ void displayMenu() {
     
     // Scrollbalken anzeigen wenn nötig
     if (currentMenu.itemCount > 5) {
-        int barHeight = 64 / currentMenu.itemCount;
-        int barPos = (64 - barHeight) * currentMenuIndex / (currentMenu.itemCount - 1);
-        displayInterface->drawRect(127, 12, 1, 52, 1);
-        displayInterface->fillRect(127, 12 + barPos, 1, barHeight, 1);
+        int menuAreaHeight = displayHeight - 12;
+        int barHeight = menuAreaHeight / currentMenu.itemCount;
+        int barPos = (menuAreaHeight - barHeight) * currentMenuIndex / (currentMenu.itemCount - 1);
+        int barX = displayWidth - 1;
+        displayInterface->drawRect(barX, 12, 1, menuAreaHeight, 1);
+        displayInterface->fillRect(barX, 12 + barPos, 1, barHeight, 1);
     }
     
     displayInterface->display();
@@ -564,6 +576,8 @@ void displayInputScreen(MenuID inputType) {
         return;
     }
     
+    const int displayWidth = getDisplayWidth();
+
     // Display leeren
     displayInterface->clear();
     
@@ -599,7 +613,7 @@ void displayInputScreen(MenuID inputType) {
     }
     
     displayInterface->println(title);
-    displayInterface->drawLine(0, 10, 128, 10, 1);
+    displayInterface->drawLine(0, 10, displayWidth, 10, 1);
     
     // Aktuellen Wert anzeigen
     displayInterface->setCursor(20, 25);
@@ -636,12 +650,14 @@ void displaySerialModeScreen() {
         return;
     }
     
+    const int displayWidth = getDisplayWidth();
+
     displayInterface->clear();
     
     displayInterface->setCursor(0, 0);
     displayInterface->setTextSize(1);
     displayInterface->println("Serieller Modus");
-    displayInterface->drawLine(0, 10, 128, 10, 1);
+    displayInterface->drawLine(0, 10, displayWidth, 10, 1);
     
     displayInterface->setCursor(5, 25);
     displayInterface->println("Steuerung per Terminal");
@@ -659,6 +675,8 @@ void displayActionScreen(const char* title, const char* message, int timeout) {
         return;
     }
     
+    const int displayWidth = getDisplayWidth();
+
     // Display leeren
     displayInterface->clear();
     
@@ -666,7 +684,7 @@ void displayActionScreen(const char* title, const char* message, int timeout) {
     displayInterface->setCursor(0, 0);
     displayInterface->setTextSize(1);
     displayInterface->println(title);
-    displayInterface->drawLine(0, 10, 128, 10, 1);
+    displayInterface->drawLine(0, 10, displayWidth, 10, 1);
     
     // Nachricht anzeigen
     displayInterface->setCursor(5, 25);
@@ -891,6 +909,12 @@ void resetFilterAction() {
     lastActivityTime = millis();
 }
 
+void showVersionAction() {
+    displayActionScreen("Version", getAppVersion(), 0);
+    showingVersion = true;
+    versionDisplayStart = millis();
+}
+
 // Serielle Befehle verarbeiten
 /*void handleSerialCommands() {
     if (Serial.available()) {
@@ -957,6 +981,8 @@ void displaySystemInfo() {
         return;
     }
     
+    const int displayWidth = getDisplayWidth();
+
     // Display leeren
     displayInterface->clear();
     
@@ -964,7 +990,7 @@ void displaySystemInfo() {
     displayInterface->setCursor(0, 0);
     displayInterface->setTextSize(1);
     displayInterface->println("System-Info");
-    displayInterface->drawLine(0, 10, 128, 10, 1);
+    displayInterface->drawLine(0, 10, displayWidth, 10, 1);
     
     // Informationen anzeigen
     displayInterface->setCursor(0, 15);
@@ -1002,6 +1028,10 @@ void displaySystemInfo() {
     displayMenu();
 }
 
+bool hasElapsed(unsigned long startTime, unsigned long durationMs) {
+    return (millis() - startTime) >= durationMs;
+}
+
 // Externe Funktionen, die von der Hauptapp aufgerufen werden
 
 // Hauptschleife für die Menüsteuerung
@@ -1025,5 +1055,12 @@ void menuLoop() {
     // Live-Monitor aktualisieren, wenn eine CAN-Nachricht verfügbar ist
     if (liveMonitor && !digitalRead(CAN_INT)) {
         processCANMessage();
+    }
+
+    if (showingVersion && hasElapsed(versionDisplayStart, VERSION_DISPLAY_TIMEOUT_MS)) {
+        showingVersion = false;
+        displayMenu();
+        activeSource = SOURCE_BUTTON;
+        lastActivityTime = millis();
     }
 }

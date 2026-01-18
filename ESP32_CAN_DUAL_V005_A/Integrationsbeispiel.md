@@ -15,7 +15,7 @@ Diese Aktualisierung führt Systemkonfigurationsprofile ein, um Hardware-Kompati
 
 ## Zu aktualisierende Funktionen
 
-1. **In der Hauptdatei (ESP32_CAN_DUAL_V004.ino):**
+1. **In der Hauptdatei (ESP32_CAN_DUAL_V005_A.ino):**
    - Füge den Include für `SystemProfiles.h` hinzu (nach den anderen Includes)
    - Ersetze die `loadSettings`-Funktion mit der aktualisierten Version
    - Ersetze die `printCurrentSettings`-Funktion mit der aktualisierten Version
@@ -27,7 +27,7 @@ Diese Aktualisierung führt Systemkonfigurationsprofile ein, um Hardware-Kompati
    - Füge einen Hinweis zur Verwendung von Profilen bei `handleTransceiverCommand` hinzu
 
 2. **In anderen Dateien:**
-   - Aktualisiere das `changelog.md` mit den Änderungen für Version V005
+   - Aktualisiere das `changelog.md` mit den Änderungen für Version V005_A
 
 ## Integrationsschritte
 
@@ -36,7 +36,7 @@ Diese Aktualisierung führt Systemkonfigurationsprofile ein, um Hardware-Kompati
    - Kopiere den Inhalt aus dem Artefakt `system-profiles-header`
 
 2. **Header-Include hinzufügen**
-   - Füge in ESP32_CAN_DUAL_V004.ino nach den bestehenden Includes folgende Zeile hinzu:
+   - Füge in ESP32_CAN_DUAL_V005_A.ino nach den bestehenden Includes folgende Zeile hinzu:
    ```cpp
    #include "SystemProfiles.h"
    ```
@@ -51,7 +51,7 @@ Diese Aktualisierung führt Systemkonfigurationsprofile ein, um Hardware-Kompati
 
 4. **Aktualisiere das Changelog**
    - Öffne die Datei `changelog.md`
-   - Füge am Anfang (vor Version V004) den Inhalt des Artefakts `changelog-update` ein
+    - Füge am Anfang (vor Version V005_A) den Inhalt des Artefakts `changelog-update` ein
 
 ## Prüfung nach der Integration
 

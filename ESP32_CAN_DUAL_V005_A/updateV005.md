@@ -107,7 +107,7 @@ Für die vollständige Implementierung werden folgende Dateien benötigt:
 19. **User_Setup.h**: Konfigurationsdatei für TFT_eSPI-Bibliothek (für TFT-Displays)
 
 ### Hauptprogramm
-20. **ESP32_CAN_DUAL_V004.ino**: Hauptprogramm mit `setup()` und `loop()` Funktionen und serieller Befehlsverarbeitung
+20. **ESP32_CAN_DUAL_V005_A.ino**: Hauptprogramm mit `setup()` und `loop()` Funktionen und serieller Befehlsverarbeitung
 
 ## Funktionalitäten
 
@@ -184,7 +184,7 @@ Das System verwendet einen ausgefeilten Zustandsmechanismus, um Konflikte zwisch
 ## Integration mit bestehendem Code
 
 ### Upgradepfad
-Die vorhandene Codebasis (`ESP32_CAN_DUAL_V004.ino`) verwendet bereits:
+Die vorhandene Codebasis (`ESP32_CAN_DUAL_V005_A.ino`) verwendet bereits:
 - **Abstraktionsschichten**: `CANInterface` und `DisplayInterface` für Hardwareabstraktion
 - **Factory-Pattern**: Zur Erzeugung der konkreten Interface-Implementierungen
 - **Persistenz**: Speichern und Laden von Einstellungen über die Preferences-Bibliothek

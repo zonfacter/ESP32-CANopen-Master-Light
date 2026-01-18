@@ -46,6 +46,9 @@ extern void handleMonitorFilterCommand(String command);
 extern void printCurrentSettings();
 extern void systemReset();
 
+constexpr size_t COMMAND_BUFFER_SIZE = 128;
+constexpr size_t COMMAND_DISCARD_LIMIT = COMMAND_BUFFER_SIZE * 4;
+
 // Hilfsfunktion zum Parsen von Befehlsparametern
 bool parseIntParams(String command, int& first, int& second) {
     int firstSpace = command.indexOf(' ');
@@ -60,15 +63,53 @@ bool parseIntParams(String command, int& first, int& second) {
     return true;
 }
 
+bool readSerialCommand(String& command) {
+    static char commandBuffer[COMMAND_BUFFER_SIZE];
+    static size_t commandIndex = 0;
+
+    while (Serial.available()) {
+        char currentChar = Serial.read();
+        if (currentChar == '\n' || currentChar == '\r') {
+            if (commandIndex == 0) {
+                continue;
+            }
+
+            commandBuffer[commandIndex] = '\0';
+            commandIndex = 0;
+            command = commandBuffer;
+            command.trim();
+            return command.length() > 0;
+        }
+
+        if (commandIndex < COMMAND_BUFFER_SIZE - 1) {
+            commandBuffer[commandIndex++] = currentChar;
+        } else {
+            commandIndex = 0;
+            // Rest der Zeile verwerfen
+            size_t discardedCount = 0;
+            while (Serial.available() && discardedCount < COMMAND_DISCARD_LIMIT) {
+                char discard = Serial.read();
+                discardedCount++;
+                if (discard == '\n' || discard == '\r') {
+                    break;
+                }
+            }
+            Serial.println("[FEHLER] Befehl zu lang, Puffer geleert.");
+            return false;
+        }
+    }
+
+    return false;
+}
+
 // Verarbeitung serieller Befehle
 void handleSerialCommands() {
-    if (Serial.available()) {
+    String command;
+    command.reserve(COMMAND_BUFFER_SIZE);
+    if (readSerialCommand(command)) {
         // Serielle Steuerung wird aktiv
         activeSource = SOURCE_SERIAL;
         lastActivityTime = millis();
-        
-        String command = Serial.readStringUntil('\n');
-        command.trim();  // Leerzeichen und Zeilenumbrüche entfernen
         
         // Befehl analysieren und ausführen
         if (command.equals("help")) {
@@ -254,7 +295,7 @@ void handleSerialCommands() {
             // Einstellungen werden direkt aus dem Hauptprogramm geladen
         }
         else if (command.equals("version")) {
-            Serial.println("[INFO] CANopen Scanner und Konfigurator V004");
+            Serial.println("[INFO] CANopen Scanner und Konfigurator V005_A");
         }
         else if (command.equals("reset")) {
             Serial.println("[CMD] Setze System zurück...");

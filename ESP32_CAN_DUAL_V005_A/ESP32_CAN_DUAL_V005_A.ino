@@ -15,13 +15,19 @@
 #include "SystemProfiles.h"
 
 // Versionsinfo
-#define VERSION       "V005"
+#define VERSION       "V005_A"
 
 // Definierte Konstanten
 #define OLED_ADDR     0x3C
 #define CAN_CS        5
 #define CAN_INT       4
 #define CAN_CLOCK     MCP_8MHZ
+constexpr int DISPLAY_OLED_WIDTH = 128;
+constexpr int DISPLAY_OLED_HEIGHT = 64;
+constexpr int DISPLAY_TFT_WIDTH = 800;
+constexpr int DISPLAY_TFT_HEIGHT = 480;
+constexpr int DISPLAY_OLED_ERROR_BAR_HEIGHT = 10;
+constexpr int DISPLAY_TFT_ERROR_BAR_HEIGHT = 30;
 
 // ===================================================================================
 // Globale Objekte und Variablen (korrigiert)
@@ -53,7 +59,7 @@ uint8_t filterType = 0; // 0=All, 1=PDO, 2=SDO, 3=EMCY, 4=NMT, 5=Heartbeat
 
 // Globale Objekte
 MCP_CAN CAN(CAN_CS);
-Adafruit_SSD1306 display(128, 64, &Wire, -1);  // Alte Implementierung Standard
+Adafruit_SSD1306 display(DISPLAY_OLED_WIDTH, DISPLAY_OLED_HEIGHT, &Wire, -1);  // Alte Implementierung Standard
 CANopen canopen(CAN_INT);
 Preferences preferences;
 
@@ -94,6 +100,10 @@ bool updateESP32CANBaudrate(int newBaudrate);
 uint8_t getBaudrateIndex(int baudrateKbps);
 void handleTestNodeCommand(String command);
 bool testSingleNode(int nodeId, int maxAttempts, int timeoutMs);
+const char* getAppVersion();
+int getDisplayWidth();
+int getDisplayHeight();
+int getDisplayErrorBarHeight();
 
 // Funktionsdeklaration
 uint8_t convertBaudrateToCANSpeed(int baudrateKbps);
@@ -232,7 +242,7 @@ void setup() {
     }
     
     // Willkommensbildschirm anzeigen
-    showStatusMessage("CANopen Scanner", "V004\nSystem wird initialisiert...");
+    showStatusMessage("CANopen Scanner", VERSION "\nSystem wird initialisiert...");
     
     // CAN-Interface basierend auf dem gespeicherten Transceiver-Typ initialisieren
     if (initializeCANInterface()) {
@@ -355,6 +365,31 @@ const char* getTransceiverTypeName(uint8_t transceiverType) {
     }
 }
 
+const char* getAppVersion() {
+    return VERSION;
+}
+
+int getDisplayWidth() {
+    if (currentDisplayType == DISPLAY_CONTROLLER_WAVESHARE_ESP32S3_TOUCH_LCD) {
+        return DISPLAY_TFT_WIDTH;
+    }
+    return DISPLAY_OLED_WIDTH;
+}
+
+int getDisplayHeight() {
+    if (currentDisplayType == DISPLAY_CONTROLLER_WAVESHARE_ESP32S3_TOUCH_LCD) {
+        return DISPLAY_TFT_HEIGHT;
+    }
+    return DISPLAY_OLED_HEIGHT;
+}
+
+int getDisplayErrorBarHeight() {
+    if (currentDisplayType == DISPLAY_CONTROLLER_WAVESHARE_ESP32S3_TOUCH_LCD) {
+        return DISPLAY_TFT_ERROR_BAR_HEIGHT;
+    }
+    return DISPLAY_OLED_ERROR_BAR_HEIGHT;
+}
+
 
 // ===================================================================================
 // Funktion: initializeDisplay (neue Version mit DisplayInterface)
@@ -405,7 +440,7 @@ bool initializeDisplay() {
     // Test-Nachricht anzeigen
     displayInterface->clear();
     displayInterface->setCursor(0, 0);
-    displayInterface->println("CANopen Scanner V004");
+    displayInterface->println("CANopen Scanner " VERSION);
     displayInterface->println("------------------");
     displayInterface->printf("Display: %s", getTransceiverTypeName(currentDisplayType));
     displayInterface->display();
@@ -545,6 +580,9 @@ void showStatusMessage(const char* title, const char* message, bool isError) {
         return;
     }
     
+    const int displayWidth = getDisplayWidth();
+    const int displayHeight = getDisplayHeight();
+
     displayInterface->clear();
     displayInterface->setCursor(0, 0);
     
@@ -554,9 +592,9 @@ void showStatusMessage(const char* title, const char* message, bool isError) {
     
     // Trennlinie
     if (currentDisplayType == DISPLAY_CONTROLLER_OLED_SSD1306) {
-        displayInterface->drawLine(0, 10, 128, 10, 1); // Weiß für OLED
+        displayInterface->drawLine(0, 10, displayWidth, 10, 1); // Weiß für OLED
     } else if (currentDisplayType == DISPLAY_CONTROLLER_WAVESHARE_ESP32S3_TOUCH_LCD) {
-        displayInterface->drawLine(0, 20, 800, 20, TFT_WHITE); // Weiß für TFT
+        displayInterface->drawLine(0, 20, displayWidth, 20, TFT_WHITE); // Weiß für TFT
     }
     
     // Nachricht anzeigen
@@ -569,20 +607,22 @@ void showStatusMessage(const char* title, const char* message, bool isError) {
     
     // Bei Fehler einen visuellen Indikator anzeigen
     if (isError) {
+        const int errorBarHeight = getDisplayErrorBarHeight();
+        const int errorBarY = displayHeight - errorBarHeight;
         if (currentDisplayType == DISPLAY_CONTROLLER_OLED_SSD1306) {
             // Für OLED-Display
-            displayInterface->drawRect(0, 0, 128, 64, 1);
-            displayInterface->fillRect(0, 54, 128, 10, 1);
+            displayInterface->drawRect(0, 0, displayWidth, displayHeight, 1);
+            displayInterface->fillRect(0, errorBarY, displayWidth, errorBarHeight, 1);
             displayInterface->setTextColor(0); // Schwarz für OLED-Inversmodus
-            displayInterface->setCursor(5, 55);
+            displayInterface->setCursor(5, errorBarY + 1);
             displayInterface->print("FEHLER!");
             displayInterface->setTextColor(1); // Zurück zu Weiß
         } else if (currentDisplayType == DISPLAY_CONTROLLER_WAVESHARE_ESP32S3_TOUCH_LCD) {
             // Für Waveshare-Display
-            displayInterface->drawRect(0, 0, 800, 480, TFT_RED);
-            displayInterface->fillRect(0, 450, 800, 30, TFT_RED);
+            displayInterface->drawRect(0, 0, displayWidth, displayHeight, TFT_RED);
+            displayInterface->fillRect(0, errorBarY, displayWidth, errorBarHeight, TFT_RED);
             displayInterface->setTextColor(TFT_WHITE);
-            displayInterface->setCursor(20, 455);
+            displayInterface->setCursor(20, errorBarY + 5);
             displayInterface->print("FEHLER!");
         }
     }
