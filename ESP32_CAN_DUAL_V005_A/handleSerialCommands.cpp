@@ -84,6 +84,12 @@ bool readSerialCommand(String& command) {
             commandBuffer[commandIndex++] = currentChar;
         } else {
             commandIndex = 0;
+            while (Serial.available()) {
+                char discard = Serial.read();
+                if (discard == '\n' || discard == '\r') {
+                    break;
+                }
+            }
             Serial.println("[FEHLER] Befehl zu lang, Puffer geleert.");
             return false;
         }

@@ -37,6 +37,8 @@ int currentInputValue = 0;
 int inputMin = 0;
 int inputMax = 127;
 int inputStep = 1;
+bool showingVersion = false;
+unsigned long versionDisplayStart = 0;
 
 // Externe Referenzen zu Variablen aus dem Hauptprogramm
 extern DisplayInterface* displayInterface;
@@ -909,10 +911,8 @@ void resetFilterAction() {
 
 void showVersionAction() {
     displayActionScreen("Version", getAppVersion(), 0);
-    delay(VERSION_DISPLAY_TIMEOUT_MS);
-    displayMenu();
-    activeSource = SOURCE_BUTTON;
-    lastActivityTime = millis();
+    showingVersion = true;
+    versionDisplayStart = millis();
 }
 
 // Serielle Befehle verarbeiten
@@ -1051,5 +1051,12 @@ void menuLoop() {
     // Live-Monitor aktualisieren, wenn eine CAN-Nachricht verfügbar ist
     if (liveMonitor && !digitalRead(CAN_INT)) {
         processCANMessage();
+    }
+
+    if (showingVersion && (millis() - versionDisplayStart >= VERSION_DISPLAY_TIMEOUT_MS)) {
+        showingVersion = false;
+        displayMenu();
+        activeSource = SOURCE_BUTTON;
+        lastActivityTime = millis();
     }
 }
