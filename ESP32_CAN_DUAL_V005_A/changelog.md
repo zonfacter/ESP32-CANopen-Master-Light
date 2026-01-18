@@ -1,5 +1,13 @@
 # Changelog für ESP32 CANopen Scanner und Konfigurator
 
+## Version V005_A (Januar 2026)
+
+### Release-Updates
+- **Korrigierte Versionsanzeige**:
+  - Einheitliche Ausgabe von V005_A in Startbildschirm, Displaytest und serieller Version-Abfrage
+- **Dokumentationsabgleich**:
+  - Versionsreferenzen in Integrationsdokumentation und Update-Hinweisen konsolidiert
+
 ## Version V005 mit Systemkonfigurationsprofilen (April 2025)
 
 ### Neue Funktionen

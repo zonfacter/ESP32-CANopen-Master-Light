@@ -254,7 +254,7 @@ void handleSerialCommands() {
             // Einstellungen werden direkt aus dem Hauptprogramm geladen
         }
         else if (command.equals("version")) {
-            Serial.println("[INFO] CANopen Scanner und Konfigurator V004");
+            Serial.println("[INFO] CANopen Scanner und Konfigurator V005_A");
         }
         else if (command.equals("reset")) {
             Serial.println("[CMD] Setze System zurück...");

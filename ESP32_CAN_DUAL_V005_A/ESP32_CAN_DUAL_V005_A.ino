@@ -15,7 +15,7 @@
 #include "SystemProfiles.h"
 
 // Versionsinfo
-#define VERSION       "V005"
+#define VERSION       "V005_A"
 
 // Definierte Konstanten
 #define OLED_ADDR     0x3C
@@ -232,7 +232,7 @@ void setup() {
     }
     
     // Willkommensbildschirm anzeigen
-    showStatusMessage("CANopen Scanner", "V004\nSystem wird initialisiert...");
+    showStatusMessage("CANopen Scanner", VERSION "\nSystem wird initialisiert...");
     
     // CAN-Interface basierend auf dem gespeicherten Transceiver-Typ initialisieren
     if (initializeCANInterface()) {
@@ -405,7 +405,7 @@ bool initializeDisplay() {
     // Test-Nachricht anzeigen
     displayInterface->clear();
     displayInterface->setCursor(0, 0);
-    displayInterface->println("CANopen Scanner V004");
+    displayInterface->println("CANopen Scanner " VERSION);
     displayInterface->println("------------------");
     displayInterface->printf("Display: %s", getTransceiverTypeName(currentDisplayType));
     displayInterface->display();

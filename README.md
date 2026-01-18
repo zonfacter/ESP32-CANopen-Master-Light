@@ -13,6 +13,8 @@ Alle Inhalte wurden unter Berücksichtigung der Lizenzbedingungen der KI-Anbiete
 
 Der ESP32-CANopen-Master-Light ermöglicht die einfache Integration und Steuerung von CANopen-kompatiblen Geräten in IoT- und Automatisierungsprojekten. Die Kombination aus leistungsstarkem ESP32-Mikrocontroller und dem robusten CANopen-Protokoll bietet eine zuverlässige Lösung für industrielle und Hobby-Anwendungen.
 
+**Aktuelle Version:** V005_A (Januar 2026)
+
 
 ## V001 
 # ESP32 CANopen Node-ID-Scanner und Manager
