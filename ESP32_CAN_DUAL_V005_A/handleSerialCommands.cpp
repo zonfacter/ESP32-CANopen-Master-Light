@@ -75,7 +75,7 @@ bool readSerialCommand(String& command) {
 
             commandBuffer[commandIndex] = '\0';
             commandIndex = 0;
-            command = String(commandBuffer);
+            command = commandBuffer;
             command.trim();
             return command.length() > 0;
         }
@@ -95,6 +95,7 @@ bool readSerialCommand(String& command) {
 // Verarbeitung serieller Befehle
 void handleSerialCommands() {
     String command;
+    command.reserve(COMMAND_BUFFER_SIZE);
     if (readSerialCommand(command)) {
         // Serielle Steuerung wird aktiv
         activeSource = SOURCE_SERIAL;

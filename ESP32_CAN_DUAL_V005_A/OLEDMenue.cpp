@@ -908,7 +908,8 @@ void resetFilterAction() {
 }
 
 void showVersionAction() {
-    displayActionScreen("Version", getAppVersion(), VERSION_DISPLAY_TIMEOUT_MS);
+    displayActionScreen("Version", getAppVersion(), 0);
+    delay(VERSION_DISPLAY_TIMEOUT_MS);
     displayMenu();
     activeSource = SOURCE_BUTTON;
     lastActivityTime = millis();
