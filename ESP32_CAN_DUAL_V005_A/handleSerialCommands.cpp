@@ -60,15 +60,43 @@ bool parseIntParams(String command, int& first, int& second) {
     return true;
 }
 
+bool readSerialCommand(String& command) {
+    static char commandBuffer[128];
+    static size_t commandIndex = 0;
+
+    while (Serial.available()) {
+        char currentChar = Serial.read();
+        if (currentChar == '\n' || currentChar == '\r') {
+            if (commandIndex == 0) {
+                continue;
+            }
+
+            commandBuffer[commandIndex] = '\0';
+            commandIndex = 0;
+            command = String(commandBuffer);
+            command.trim();
+            return command.length() > 0;
+        }
+
+        if (commandIndex < sizeof(commandBuffer) - 1) {
+            commandBuffer[commandIndex++] = currentChar;
+        } else {
+            commandIndex = 0;
+            Serial.println("[FEHLER] Befehl zu lang, Puffer geleert.");
+            return false;
+        }
+    }
+
+    return false;
+}
+
 // Verarbeitung serieller Befehle
 void handleSerialCommands() {
-    if (Serial.available()) {
+    String command;
+    if (readSerialCommand(command)) {
         // Serielle Steuerung wird aktiv
         activeSource = SOURCE_SERIAL;
         lastActivityTime = millis();
-        
-        String command = Serial.readStringUntil('\n');
-        command.trim();  // Leerzeichen und Zeilenumbrüche entfernen
         
         // Befehl analysieren und ausführen
         if (command.equals("help")) {
