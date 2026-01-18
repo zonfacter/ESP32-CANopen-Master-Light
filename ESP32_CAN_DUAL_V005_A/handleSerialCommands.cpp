@@ -46,6 +46,8 @@ extern void handleMonitorFilterCommand(String command);
 extern void printCurrentSettings();
 extern void systemReset();
 
+constexpr size_t COMMAND_BUFFER_SIZE = 128;
+
 // Hilfsfunktion zum Parsen von Befehlsparametern
 bool parseIntParams(String command, int& first, int& second) {
     int firstSpace = command.indexOf(' ');
@@ -61,7 +63,7 @@ bool parseIntParams(String command, int& first, int& second) {
 }
 
 bool readSerialCommand(String& command) {
-    static char commandBuffer[128];
+    static char commandBuffer[COMMAND_BUFFER_SIZE];
     static size_t commandIndex = 0;
 
     while (Serial.available()) {
@@ -78,7 +80,7 @@ bool readSerialCommand(String& command) {
             return command.length() > 0;
         }
 
-        if (commandIndex < sizeof(commandBuffer) - 1) {
+        if (commandIndex < COMMAND_BUFFER_SIZE - 1) {
             commandBuffer[commandIndex++] = currentChar;
         } else {
             commandIndex = 0;

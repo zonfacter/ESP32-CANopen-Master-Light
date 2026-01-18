@@ -10,6 +10,7 @@
 ControlSource activeSource = SOURCE_NONE;
 unsigned long lastActivityTime = 0;
 const unsigned long SOURCE_TIMEOUT = 3000; // 3 Sekunden Timeout
+constexpr int VERSION_DISPLAY_TIMEOUT_MS = 2000;
 
 // Zustandsvariablen für Buttons
 bool buttonUpPressed = false;
@@ -907,7 +908,7 @@ void resetFilterAction() {
 }
 
 void showVersionAction() {
-    displayActionScreen("Version", getAppVersion(), 2000);
+    displayActionScreen("Version", getAppVersion(), VERSION_DISPLAY_TIMEOUT_MS);
     displayMenu();
     activeSource = SOURCE_BUTTON;
     lastActivityTime = millis();
