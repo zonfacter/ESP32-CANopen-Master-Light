@@ -1014,27 +1014,63 @@ void handleModeCommand(String command) {
 // Beschreibung: Zeigt eine Hilfe mit allen verfügbaren Befehlen an
 // ===================================================================================
 void printHelpMenu() {
-    Serial.println("\n=== CANopen Scanner und Konfigurator " VERSION " ===");
-    Serial.println("Verfügbare Befehle:");
-    Serial.println("  help          → Diese Hilfe anzeigen");
-    Serial.println("  scan          → Node-ID Scan starten");
-    Serial.println("  range x y     → Scan-Bereich setzen (z.B. 1 10)");
-    Serial.println("  monitor on    → Live Monitor aktivieren");
-    Serial.println("  monitor off   → Live Monitor deaktivieren");
-    Serial.println("  change a b    → Node-ID a → b ändern (SDO)");
-    Serial.println("  baudrate x y  → Baudrate ändern (nodeID x auf y kbps: 10, 20, 50, 100, 125, 250, 500, 800, 1000)");
-    Serial.println("  localbaud x   → Lokale ESP32-Baudrate ändern (nur ESP32, ohne CANopen-Kommunikation)");
-    Serial.println("  transceiver   → Zeigt Hilfe zu Transceiver- und Display-Befehlen an");
-    Serial.println("  mode          → Zeigt Informationen zu Systemkonfigurationsprofilen");
-    Serial.println("  mode x        → Wechselt zu Konfigurationsprofil x (1=OLED+MCP2515, 2=TFT+TJA1051)");
-    Serial.println("  testnode x    → Einzelnen Node x intensiv testen (mit erweiterten Optionen)");
-    Serial.println("  auto          → Automatische Baudratenerkennung starten");
-    Serial.println("  info          → Aktuelle Einstellungen anzeigen");
-    Serial.println("  save          → Einstellungen speichern");
-    Serial.println("  load          → Einstellungen laden");
-    Serial.println("  version       → Versionsinfo anzeigen");
-    Serial.println("  reset         → System zurücksetzen");
-    Serial.println("=======================================");
+    Serial.println("\n╔═══════════════════════════════════════════════════════════════╗");
+    Serial.println("║      CANopen Scanner & Konfigurator " VERSION "                    ║");
+    Serial.println("╚═══════════════════════════════════════════════════════════════╝");
+    
+    Serial.println("\n┌─ Node-Scanning ──────────────────────────────────────────┐");
+    Serial.println("│ scan              Node-ID Scan starten                    │");
+    Serial.println("│ range <start> <end>  Scan-Bereich setzen (z.B. range 1 10) │");
+    Serial.println("│ testnode <id> [attempts] [timeout]                        │");
+    Serial.println("│                   Einzelnen Node testen                   │");
+    Serial.println("│                   Standard: 5 Versuche, 500ms Timeout     │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n┌─ Node-Konfiguration ─────────────────────────────────────┐");
+    Serial.println("│ change <old> <new>  Node-ID ändern (z.B. change 8 4)     │");
+    Serial.println("│ baudrate <id> <rate>  Node-Baudrate ändern               │");
+    Serial.println("│                       Werte: 10, 20, 50, 100, 125,       │");
+    Serial.println("│                              250, 500, 800, 1000 kbps    │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n┌─ CAN-Bus Monitor ────────────────────────────────────────┐");
+    Serial.println("│ monitor on        Live-Monitor aktivieren                │");
+    Serial.println("│ monitor off       Live-Monitor deaktivieren              │");
+    Serial.println("│ monitor filter <options>  Filter konfigurieren           │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n┌─ System-Konfiguration ───────────────────────────────────┐");
+    Serial.println("│ localbaud <rate>  Lokale CAN-Baudrate ändern             │");
+    Serial.println("│                   (ohne CANopen-Kommunikation)            │");
+    Serial.println("│ auto              Automatische Baudratenerkennung         │");
+    Serial.println("│ mode [1|2]        Systemprofile anzeigen/wechseln        │");
+    Serial.println("│                   1 = OLED + MCP2515                      │");
+    Serial.println("│                   2 = TFT + TJA1051                       │");
+    Serial.println("│ transceiver       Transceiver-/Display-Befehle anzeigen  │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n┌─ Einstellungen & Information ────────────────────────────┐");
+    Serial.println("│ info              Aktuelle Einstellungen anzeigen        │");
+    Serial.println("│ save              Einstellungen speichern                │");
+    Serial.println("│ load              Einstellungen laden                    │");
+    Serial.println("│ version           Versionsinfo anzeigen                  │");
+    Serial.println("│ reset             System zurücksetzen                    │");
+    Serial.println("│ help              Diese Hilfe anzeigen                   │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n┌─ Menüsteuerung ──────────────────────────────────────────┐");
+    Serial.println("│ menu              Zur Button-Menüsteuerung wechseln      │");
+    Serial.println("└──────────────────────────────────────────────────────────┘");
+    
+    Serial.println("\n► Beispiele:");
+    Serial.println("  scan                    ← Scanne Nodes im konfigurierten Bereich");
+    Serial.println("  range 1 127             ← Scanne alle möglichen Node-IDs");
+    Serial.println("  testnode 3 10 1000      ← Teste Node 3 mit 10 Versuchen à 1000ms");
+    Serial.println("  change 8 4              ← Ändere Node-ID von 8 auf 4");
+    Serial.println("  baudrate 3 250          ← Setze Node 3 auf 250 kbps");
+    Serial.println("  localbaud 500           ← Setze lokale Baudrate auf 500 kbps");
+    Serial.println("  monitor on              ← Aktiviere Live CAN-Monitor");
+    Serial.println("");
 }
 // ===================================================================================
 // Funktion: handleLocalBaudrateCommand

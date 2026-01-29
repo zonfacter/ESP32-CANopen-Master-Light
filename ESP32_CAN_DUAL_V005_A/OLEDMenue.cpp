@@ -5,12 +5,13 @@
 
 #include "OLEDMenu.h"
 #include "CANopen.h"
+#include "DisplayConfig.h"
 
 // Zustandsvariablen für die Steuerung
 ControlSource activeSource = SOURCE_NONE;
 unsigned long lastActivityTime = 0;
-const unsigned long SOURCE_TIMEOUT = 3000; // 3 Sekunden Timeout
-constexpr int VERSION_DISPLAY_TIMEOUT_MS = 2000;
+const unsigned long SOURCE_TIMEOUT = CONTROL_SOURCE_TIMEOUT_MS;
+constexpr int VERSION_DISPLAY_TIMEOUT_MS_LOCAL = VERSION_DISPLAY_TIMEOUT_MS;
 
 // Zustandsvariablen für Buttons
 bool buttonUpPressed = false;
