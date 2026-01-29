@@ -6,14 +6,16 @@
 #pragma once
 
 #include "DisplayInterface.h"
+#include "DisplayConfig.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 
-#define OLED_ADDR  0x3C   // Typische Adresse für SSD1306-Displays
-#define SCREEN_WIDTH 128  // OLED-Display-Breite in Pixeln
-#define SCREEN_HEIGHT 64  // OLED-Display-Höhe in Pixeln
-#define OLED_RESET    -1  // Reset-Pin (-1 für gemeinsame Nutzung des Arduino-Reset)
+// Verwende zentralisierte Konstanten aus DisplayConfig.h
+#define OLED_ADDR  OLED_I2C_ADDR
+#define SCREEN_WIDTH OLED_WIDTH
+#define SCREEN_HEIGHT OLED_HEIGHT
+#define OLED_RESET OLED_RESET_PIN
 
 class OLEDDisplay : public DisplayInterface {
 private:
