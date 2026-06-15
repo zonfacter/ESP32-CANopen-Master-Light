@@ -11,6 +11,14 @@
 #include "CANInterface.h"
 
 // ================================
+// Debug-Konfiguration
+// ================================
+// Setze auf 'true' für detaillierte SDO Debug-Ausgaben, 'false' zum Deaktivieren
+#ifndef CANOPEN_DEBUG_SDO
+#define CANOPEN_DEBUG_SDO false
+#endif
+
+// ================================
 // Standard-CANopen COB-IDs (Base)
 // ================================
 #define COB_ID_SYNC      0x080
@@ -61,10 +69,18 @@ public:
     // Interface-Verwaltung
     void setCANInterface(CANInterface* interface);
     CANInterface* getCANInterface() const;
+    
+    // Debug-Steuerung
+    void setDebugMode(bool enabled);
+    bool getDebugMode() const;
 
 private:
     uint8_t _intPin; // Interner Speicher für den Interrupt-Pin (für Kompatibilität)
     CANInterface* _interface; // Das zu verwendende CAN-Interface
+    bool _debugMode; // Debug-Modus (aktiviert/deaktiviert SDO-Ausgaben)
+    
+    // Hilfsfunktionen für Fehlerausgabe
+    const char* getSDOAbortCodeDescription(uint32_t abortCode);
 };
 
 #endif

@@ -319,6 +319,53 @@ This project can serve as a foundation for advanced CANopen tools, such as:
 ✅ Multi-Geräte-Management  
 ✅ PDO/SDO Kommunikation  
 
+## Funktionsübersicht
+
+### Core-Funktionen
+
+#### 1. CANopen Node-Scanning
+- **Automatische Node-Erkennung:** Scanne das CAN-Netzwerk nach aktiven Nodes (1-127)
+- **Konfigurierbarer Bereich:** Flexibler Scan-Bereich (z.B. nur 1-10 oder 1-127)
+- **Retry-Mechanismus:** 3 Versuche pro Node mit 100ms Timeout
+- **Eindeutige Status-Meldungen:** Gefunden/Timeout/Abbruch werden klar unterschieden
+- **Live-Feedback:** Echtzeit-Anzeige auf Display und serieller Konsole
+
+#### 2. SDO-Kommunikation (Service Data Objects)
+- **SDO Read:** Lese Objektverzeichnis-Einträge (z.B. Gerätetyp, Fehlerregister)
+- **SDO Write:** Schreibe Konfigurationsparameter
+- **Abort-Code-Dekodierung:** 30+ Standard-Fehlercodes mit Beschreibungen
+- **Debug-Modus:** Optional aktivierbare detaillierte SDO-Protokoll-Ausgaben
+- **Timeout-Management:** Konfigurierbare Timeouts für verschiedene Operationen
+
+#### 3. NMT-Steuerung (Network Management)
+- **Node-Zustandssteuerung:** Start, Stop, Pre-Operational, Reset
+- **Broadcast-Unterstützung:** Steuere alle Nodes gleichzeitig
+- **Automatische Zustandserkennung:** Erkennt Bootup und Heartbeat-Nachrichten
+
+#### 4. Node-ID-Änderung
+- **Herstellerunabhängig:** Unterstützt Standard CANopen-Objekte (0x2000:01/02)
+- **EEPROM-Speicherung:** Dauerhafte Speicherung der neuen Node-ID
+- **Verifikation:** Automatische Bestätigung nach Neustart
+- **Fehlerbehandlung:** Robuste Fehlerprüfung bei jedem Schritt
+
+#### 5. Baudrate-Management
+- **Lokale Baudrate:** Ändere CAN-Controller-Baudrate (10-1000 kbps)
+- **Remote-Baudrate:** Ändere Node-Baudrate via SDO
+- **Auto-Erkennung:** Automatische Baudratenerkennung (experimentell)
+- **Multi-Interface:** Unterstützt verschiedene CAN-Transceiver mit spezifischen Baudraten
+
+#### 6. Live-CAN-Monitor
+- **Echtzeit-Anzeige:** Zeige alle CAN-Nachrichten in Echtzeit
+- **Protokoll-Dekodierung:** Automatische Interpretation von NMT, SDO, PDO, Heartbeat
+- **Filter-Optionen:** Filtere nach Node-ID, COB-ID oder Nachrichtentyp
+- **Hex/Dezimal-Darstellung:** Flexible Anzeigeformate
+
+#### 7. Display & Menüsystem
+- **3-Tasten-Bedienung:** Intuitives UP/DOWN/SELECT-Interface
+- **Multi-Display-Support:** OLED (128×64) oder TFT (800×480)
+- **Kontextabhängige Anzeigen:** Automatische Umschaltung zwischen Scan/Monitor/Menü
+- **Versionsinformation:** Eingebaute Versionsanzeige  
+
 ## Hardware-Anforderungen
 - ESP32 Development Board
 - MCP2515 CAN-Bus-Modul
@@ -326,6 +373,112 @@ This project can serve as a foundation for advanced CANopen tools, such as:
 - 3 Taster für Menübedienung
 - Micro-USB-Kabel für Stromversorgung/Programmierung
 - Optionaler Gehäuse-3D-Druck verfügbar
+
+## CAN-Interface Konfiguration
+
+### Unterstützte CAN-Transceiver
+
+Das Projekt unterstützt drei verschiedene CAN-Transceiver:
+
+#### 1. TJA1051 (empfohlen für ESP32-S3-Touch-LCD-4.3B)
+**Pin-Belegung:**
+- TX-Pin: GPIO 18
+- RX-Pin: GPIO 17
+- STBY-Pin: Optional (GPIO 255 = nicht verwendet)
+
+**Unterstützte Baudraten:**
+- 1000 kbps (1 Mbps)
+- 500 kbps
+- 250 kbps
+- 125 kbps
+
+**Besonderheiten:**
+- Nutzt ESP32 TWAI (Two-Wire Automotive Interface) Controller
+- Integrierte Fehlerbehandlung und automatisches Retry
+- Low-Power Standby-Modus verfügbar
+
+#### 2. MCP2515 (SPI-basiert)
+**Pin-Belegung:**
+- CS-Pin: GPIO 5
+- INT-Pin: GPIO 4
+- MOSI: VSPI MOSI
+- MISO: VSPI MISO
+- CLK: VSPI CLK
+
+**Unterstützte Baudraten:**
+- 1000 kbps (1 Mbps)
+- 500 kbps
+- 250 kbps
+- 125 kbps
+- 100 kbps
+- 50 kbps
+- 20 kbps
+- 10 kbps (mit 8 MHz Quarz)
+
+**Besonderheiten:**
+- Externe SPI-Kommunikation erforderlich
+- Flexibler durch verschiedene Quarzkonfigurationen
+- Bewährte Industrielösung
+
+#### 3. ESP32 Native CAN (TWAI)
+**Pin-Belegung:**
+- Konfigurierbar über Software
+- Standard: GPIO 21 (TX), GPIO 22 (RX)
+
+**Unterstützte Baudraten:**
+- 1000 kbps (1 Mbps)
+- 800 kbps
+- 500 kbps
+- 250 kbps
+- 125 kbps
+- 100 kbps
+- 50 kbps
+- 25 kbps
+- 20 kbps
+- 10 kbps
+
+### Fehlerbehandlung bei Baudraten
+
+**Unsupported Baudrate Error:**
+```
+[FEHLER] Ungültige Baudrate! Gültige Werte: 10, 20, 50, 100, 125, 250, 500, 800, 1000 kbps
+```
+
+Wenn eine nicht unterstützte Baudrate angegeben wird:
+1. Das System gibt eine Fehlermeldung über die serielle Schnittstelle aus
+2. Die Baudrate wird NICHT geändert
+3. Die vorherige (funktionierende) Baudrate bleibt aktiv
+4. Eine Liste der unterstützten Baudraten wird angezeigt
+
+**Beispiel für Baudratenwechsel (seriell):**
+```bash
+# Lokale Baudrate ändern
+localbaud 500
+
+# Node-Baudrate ändern
+baudrate 3 250
+```
+
+### Hardware-Profile
+
+Das System unterstützt vordefinierte Hardware-Profile:
+
+**Profil 1: OLED + MCP2515**
+- Display: SSD1306 OLED (128×64)
+- CAN: MCP2515 (SPI)
+- Ideal für: Entwicklung, Prototyping
+
+**Profil 2: TFT + TJA1051**
+- Display: Waveshare ESP32-S3 TFT (800×480)
+- CAN: TJA1051 (TWAI)
+- Ideal für: Produktiveinsatz, HMI-Anwendungen
+
+**Profil wechseln:**
+```bash
+# Via serieller Konsole
+mode 1    # OLED + MCP2515
+mode 2    # TFT + TJA1051
+```
 
 ## Installation
 1. Repository klonen: `git clone https://github.com/Zonfacter/ESP32-CANopen-Master-Light.git`
@@ -340,14 +493,268 @@ This project can serve as a foundation for advanced CANopen tools, such as:
 - Entwicklung und Prototyping von CANopen-Anwendungen
 
 ## Nutzung
-```cpp
-// Beispiel: Motor über WebSocket API steuern
-// POST /api/motor/control
+
+### Serielle Konsole (115200 Baud)
+
+```bash
+# Node-Scanning
+scan                    # Starte Scan im konfigurierten Bereich
+range 1 127            # Setze Scan-Bereich auf alle Nodes
+testnode 3 10 1000     # Teste Node 3 (10 Versuche, 1000ms Timeout)
+
+# Node-Konfiguration
+change 8 4             # Ändere Node-ID von 8 auf 4
+baudrate 3 250         # Setze Node 3 auf 250 kbps
+
+# CAN-Monitor
+monitor on             # Aktiviere Live-Monitor
+monitor off            # Deaktiviere Live-Monitor
+monitor filter <id>    # Filtere nach Node-ID
+
+# System
+localbaud 500          # Setze lokale CAN-Baudrate auf 500 kbps
+auto                   # Auto-Baudrate-Erkennung
+mode 2                 # Wechsel zu Profil 2 (TFT+TJA1051)
+info                   # Zeige aktuelle Einstellungen
+save                   # Speichere Einstellungen
+reset                  # System-Reset
+help                   # Zeige Hilfe
+```
+
+### WebSocket API (JSON)
+
+#### Verbindung
+```javascript
+// WebSocket-Verbindung aufbauen
+const ws = new WebSocket('ws://ESP32_IP_ADDRESS/ws');
+
+ws.onopen = () => {
+    console.log('Verbunden mit ESP32 CANopen Master');
+};
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log('Empfangen:', data);
+};
+```
+
+#### API-Befehle
+
+**1. Node-Scan durchführen**
+```json
 {
-  "nodeId": 3,
-  "command": "speed",
-  "value": 1000,
-  "acceleration": 500
+  "command": "scan",
+  "params": {
+    "start": 1,
+    "end": 127
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "completed",
+  "command": "scan",
+  "result": {
+    "foundNodes": [3, 5, 8],
+    "timeoutNodes": 124,
+    "scanDuration": 12450
+  }
+}
+```
+
+**2. Node-ID ändern**
+```json
+{
+  "command": "changeNodeId",
+  "params": {
+    "oldId": 8,
+    "newId": 4,
+    "storeInEeprom": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "changeNodeId",
+  "result": {
+    "oldId": 8,
+    "newId": 4,
+    "verified": true
+  }
+}
+```
+
+**3. SDO Read (Objektverzeichnis auslesen)**
+```json
+{
+  "command": "sdoRead",
+  "params": {
+    "nodeId": 3,
+    "index": "0x1000",
+    "subIndex": 0,
+    "timeout": 1000
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "sdoRead",
+  "result": {
+    "nodeId": 3,
+    "index": "0x1000",
+    "subIndex": 0,
+    "value": "0x00000191",
+    "valueDecimal": 401,
+    "description": "Device Type"
+  }
+}
+```
+
+**4. SDO Write (Parameter setzen)**
+```json
+{
+  "command": "sdoWrite",
+  "params": {
+    "nodeId": 3,
+    "index": "0x2000",
+    "subIndex": 1,
+    "value": "0x6E657277",
+    "size": 4
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "sdoWrite",
+  "result": {
+    "nodeId": 3,
+    "acknowledged": true
+  }
+}
+```
+
+**5. Motor steuern (Dunkermotor BG-Serie)**
+```json
+{
+  "command": "motor",
+  "params": {
+    "nodeId": 3,
+    "action": "setSpeed",
+    "speed": 1000,
+    "acceleration": 500,
+    "unit": "rpm"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "motor",
+  "result": {
+    "nodeId": 3,
+    "currentSpeed": 1000,
+    "currentPosition": 0,
+    "state": "running"
+  }
+}
+```
+
+**6. Baudrate ändern**
+```json
+{
+  "command": "setBaudrate",
+  "params": {
+    "nodeId": 3,
+    "baudrate": 250
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "setBaudrate",
+  "result": {
+    "nodeId": 3,
+    "oldBaudrate": 125,
+    "newBaudrate": 250,
+    "verified": true
+  }
+}
+```
+
+**7. Status abfragen**
+```json
+{
+  "command": "getStatus",
+  "params": {
+    "nodeId": 3
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "command": "getStatus",
+  "result": {
+    "nodeId": 3,
+    "online": true,
+    "nmtState": "operational",
+    "errorRegister": 0,
+    "deviceType": "0x00000191",
+    "vendor": "Dunkermotoren",
+    "productCode": "BG45x50SI",
+    "revision": "1.0",
+    "serialNumber": "12345678"
+  }
+}
+```
+
+### Fehlerbehandlung
+
+**Standard-Fehler-Response:**
+```json
+{
+  "status": "error",
+  "command": "sdoRead",
+  "error": {
+    "code": "SDO_ABORT",
+    "abortCode": "0x06020000",
+    "description": "Objekt existiert nicht im Objektverzeichnis",
+    "nodeId": 3,
+    "index": "0x9999",
+    "subIndex": 0
+  }
+}
+```
+
+**Timeout-Response:**
+```json
+{
+  "status": "timeout",
+  "command": "sdoRead",
+  "error": {
+    "code": "TIMEOUT",
+    "description": "Node antwortet nicht",
+    "nodeId": 3,
+    "timeout": 1000
+  }
 }
 ```
 

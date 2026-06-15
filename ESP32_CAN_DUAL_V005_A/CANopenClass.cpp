@@ -8,15 +8,15 @@
 #include <SPI.h>
 
 // Konstruktor mit Interface
-CANopen::CANopen(CANInterface* interface) : _intPin(0), _interface(interface) {
+CANopen::CANopen(CANInterface* interface) : _intPin(0), _interface(interface), _debugMode(CANOPEN_DEBUG_SDO) {
 }
 
 // Konstruktor mit intPin (für Kompatibilität)
-CANopen::CANopen(uint8_t intPin) : _intPin(intPin), _interface(nullptr) {
+CANopen::CANopen(uint8_t intPin) : _intPin(intPin), _interface(nullptr), _debugMode(CANOPEN_DEBUG_SDO) {
 }
 
 // Standardkonstruktor (für Kompatibilität)
-CANopen::CANopen() : _intPin(0), _interface(nullptr) {
+CANopen::CANopen() : _intPin(0), _interface(nullptr), _debugMode(CANOPEN_DEBUG_SDO) {
 }
 
 // Interface setzen
@@ -27,6 +27,56 @@ void CANopen::setCANInterface(CANInterface* interface) {
 // Interface abrufen
 CANInterface* CANopen::getCANInterface() const {
     return _interface;
+}
+
+// Debug-Modus setzen
+void CANopen::setDebugMode(bool enabled) {
+    _debugMode = enabled;
+    if (_debugMode) {
+        Serial.println("[SDO-DEBUG] Debug-Modus aktiviert");
+    } else {
+        Serial.println("[SDO-DEBUG] Debug-Modus deaktiviert");
+    }
+}
+
+// Debug-Modus abrufen
+bool CANopen::getDebugMode() const {
+    return _debugMode;
+}
+
+// Hilfsfunktion: SDO Abort Code beschreiben
+const char* CANopen::getSDOAbortCodeDescription(uint32_t abortCode) {
+    switch (abortCode) {
+        case 0x05030000: return "Toggle-bit nicht alterniert";
+        case 0x05040000: return "SDO-Protokoll-Timeout";
+        case 0x05040001: return "Ungültiger Command Specifier";
+        case 0x05040002: return "Ungültige Blockgröße";
+        case 0x05040003: return "Ungültige Sequenznummer";
+        case 0x05040004: return "CRC-Fehler";
+        case 0x05040005: return "Speicher außerhalb des zulässigen Bereichs";
+        case 0x06010000: return "Zugriff nicht unterstützt";
+        case 0x06010001: return "Schreibzugriff auf read-only Objekt";
+        case 0x06010002: return "Lesezugriff auf write-only Objekt";
+        case 0x06020000: return "Objekt existiert nicht im Objektverzeichnis";
+        case 0x06040041: return "Objekt kann nicht auf PDO gemappt werden";
+        case 0x06040042: return "Anzahl/Länge der zu mappenden Objekte überschreitet PDO-Länge";
+        case 0x06040043: return "Allgemeiner Parameterfehler";
+        case 0x06040047: return "Allgemeiner interner Fehler";
+        case 0x06060000: return "Hardware-Fehler beim Zugriff auf Objekt";
+        case 0x06070010: return "Datentyp stimmt nicht überein";
+        case 0x06070012: return "Datenlänge stimmt nicht überein";
+        case 0x06070013: return "Datenlänge zu hoch";
+        case 0x06090011: return "Subindex existiert nicht";
+        case 0x06090030: return "Wert außerhalb des zulässigen Bereichs";
+        case 0x06090031: return "Wert zu hoch";
+        case 0x06090032: return "Wert zu niedrig";
+        case 0x06090036: return "Maximaler Wert ist kleiner als Minimalwert";
+        case 0x08000000: return "Allgemeiner Fehler";
+        case 0x08000020: return "Daten können nicht in Anwendung übertragen werden";
+        case 0x08000021: return "Daten können aufgrund lokaler Steuerung nicht übertragen werden";
+        case 0x08000022: return "Daten können aufgrund Gerätestatus nicht übertragen werden";
+        default: return "Unbekannter Abort-Code";
+    }
 }
 
 // ===================================================================================
@@ -73,7 +123,7 @@ bool CANopen::sendSync() {
 bool CANopen::readSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t &value, uint32_t timeout) {
     // Prüfen, ob ein gültiges Interface vorhanden ist
     if (_interface == nullptr) {
-        Serial.println("[FEHLER] Kein CAN-Interface gesetzt");
+        Serial.println("[SDO-ERROR] Kein CAN-Interface gesetzt");
         return false;
     }
     
@@ -84,12 +134,16 @@ bool CANopen::readSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t
         0, 0, 0, 0
     };
     
-    // Debug-Ausgabe hinzugefügt
-    Serial.print("[DEBUG] Sende SDO Read Request: ");
-    for (int i = 0; i < 8; i++) {
-        Serial.printf("%02X ", request[i]);
+    // Debug-Ausgabe (optional)
+    if (_debugMode) {
+        Serial.printf("[SDO-READ] Node %d, Index 0x%04X:%02X, Timeout %lu ms\n", 
+                      nodeId, index, subIndex, timeout);
+        Serial.print("[SDO-READ] Request: ");
+        for (int i = 0; i < 8; i++) {
+            Serial.printf("%02X ", request[i]);
+        }
+        Serial.println();
     }
-    Serial.println();
     
     // Anfrage senden
     _interface->sendMessage(COB_ID_RSDO_BASE + nodeId, 0, 8, request);
@@ -104,28 +158,36 @@ bool CANopen::readSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t
             uint8_t buf[8];
             
             if (_interface->receiveMessage(&id, &ext, &len, buf)) {
-                // Debug-Ausgabe hinzugefügt
-                Serial.printf("[DEBUG] Empfangene Antwort von ID 0x%lX: ", id);
-                for (int i = 0; i < len; i++) {
-                    Serial.printf("%02X ", buf[i]);
+                // Debug-Ausgabe (optional)
+                if (_debugMode) {
+                    Serial.printf("[SDO-READ] Response ID 0x%03lX: ", id);
+                    for (int i = 0; i < len; i++) {
+                        Serial.printf("%02X ", buf[i]);
+                    }
+                    Serial.println();
                 }
-                Serial.println();
                 
                 if (id == (COB_ID_TSDO_BASE + nodeId)) {
                     if ((buf[0] & 0xE0) == 0x80) {
                         // Dies ist ein SDO Abort
                         uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
-                        Serial.printf("[FEHLER] SDO Abort Code: 0x%08X\n", abortCode);
+                        Serial.printf("[SDO-ABORT] Node %d, Index 0x%04X:%02X, Code 0x%08X (%s)\n",
+                                      nodeId, index, subIndex, abortCode, 
+                                      getSDOAbortCodeDescription(abortCode));
                         return false;
                     } else if ((buf[0] & 0xE0) != 0x80) {
                         value = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
+                        if (_debugMode) {
+                            Serial.printf("[SDO-READ] Success: Value = 0x%08lX (%lu)\n", value, value);
+                        }
                         return true;
                     }
                 }
             }
         }
     }
-    Serial.println("[FEHLER] SDO Timeout bei Leseanfrage");
+    Serial.printf("[SDO-TIMEOUT] Node %d, Index 0x%04X:%02X (nach %lu ms)\n", 
+                  nodeId, index, subIndex, timeout);
     return false;
 }
 
@@ -137,7 +199,7 @@ bool CANopen::readSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t
 bool CANopen::writeSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t value, uint8_t size) {
     // Prüfen, ob ein gültiges Interface vorhanden ist
     if (_interface == nullptr) {
-        Serial.println("[FEHLER] Kein CAN-Interface gesetzt");
+        Serial.println("[SDO-ERROR] Kein CAN-Interface gesetzt");
         return false;
     }
     
@@ -150,16 +212,20 @@ bool CANopen::writeSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_
         (uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 24) & 0xFF)
     };
     
-    // Debug-Ausgabe hinzugefügt
-    Serial.print("[DEBUG] Sende SDO Write Request: ");
-    for (int i = 0; i < 8; i++) {
-        Serial.printf("%02X ", data[i]);
+    // Debug-Ausgabe (optional)
+    if (_debugMode) {
+        Serial.printf("[SDO-WRITE] Node %d, Index 0x%04X:%02X, Value 0x%08lX (%lu), Size %d\n",
+                      nodeId, index, subIndex, value, value, size);
+        Serial.print("[SDO-WRITE] Request: ");
+        for (int i = 0; i < 8; i++) {
+            Serial.printf("%02X ", data[i]);
+        }
+        Serial.println();
     }
-    Serial.println();
     
     // Nachricht senden
     if (!_interface->sendMessage(COB_ID_RSDO_BASE + nodeId, 0, 8, data)) {
-        Serial.println("[FEHLER] CAN-Nachricht konnte nicht gesendet werden");
+        Serial.printf("[SDO-ERROR] CAN-Nachricht konnte nicht gesendet werden (Node %d)\n", nodeId);
         return false;
     }
 
@@ -173,27 +239,35 @@ bool CANopen::writeSDO(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_
             uint8_t buf[8];
             
             if (_interface->receiveMessage(&id, &ext, &len, buf)) {
-                // Debug-Ausgabe hinzugefügt
-                Serial.printf("[DEBUG] Empfangene Antwort von ID 0x%lX: ", id);
-                for (int i = 0; i < len; i++) {
-                    Serial.printf("%02X ", buf[i]);
+                // Debug-Ausgabe (optional)
+                if (_debugMode) {
+                    Serial.printf("[SDO-WRITE] Response ID 0x%03lX: ", id);
+                    for (int i = 0; i < len; i++) {
+                        Serial.printf("%02X ", buf[i]);
+                    }
+                    Serial.println();
                 }
-                Serial.println();
                 
                 if (id == (COB_ID_TSDO_BASE + nodeId)) {
                     if ((buf[0] & 0xE0) == 0x80) {
                         // Dies ist ein SDO Abort
                         uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
-                        Serial.printf("[FEHLER] SDO Abort Code: 0x%08X\n", abortCode);
+                        Serial.printf("[SDO-ABORT] Node %d, Index 0x%04X:%02X, Code 0x%08X (%s)\n",
+                                      nodeId, index, subIndex, abortCode,
+                                      getSDOAbortCodeDescription(abortCode));
                         return false;
                     } else if ((buf[0] & 0xE0) != 0x80) {
+                        if (_debugMode) {
+                            Serial.printf("[SDO-WRITE] Success: Node %d acknowledged\n", nodeId);
+                        }
                         return true;
                     }
                 }
             }
         }
     }
-    Serial.println("[FEHLER] SDO Timeout bei Schreibanfrage");
+    Serial.printf("[SDO-TIMEOUT] Node %d, Index 0x%04X:%02X (nach 1000 ms)\n", 
+                  nodeId, index, subIndex);
     return false;
 }
 
@@ -205,7 +279,7 @@ bool CANopen::writeSDOWithTimeout(uint8_t nodeId, uint16_t index, uint8_t subInd
                                uint32_t value, uint8_t size, uint32_t timeout) {
     // Prüfen, ob ein gültiges Interface vorhanden ist
     if (_interface == nullptr) {
-        Serial.println("[FEHLER] Kein CAN-Interface gesetzt");
+        Serial.println("[SDO-ERROR] Kein CAN-Interface gesetzt");
         return false;
     }
     
@@ -218,16 +292,20 @@ bool CANopen::writeSDOWithTimeout(uint8_t nodeId, uint16_t index, uint8_t subInd
         (uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 24) & 0xFF)
     };
     
-    // Debug-Ausgabe
-    Serial.print("[DEBUG] Sende SDO Write Request: ");
-    for (int i = 0; i < 8; i++) {
-        Serial.printf("%02X ", data[i]);
+    // Debug-Ausgabe (optional)
+    if (_debugMode) {
+        Serial.printf("[SDO-WRITE] Node %d, Index 0x%04X:%02X, Value 0x%08lX, Timeout %lu ms\n",
+                      nodeId, index, subIndex, value, timeout);
+        Serial.print("[SDO-WRITE] Request: ");
+        for (int i = 0; i < 8; i++) {
+            Serial.printf("%02X ", data[i]);
+        }
+        Serial.println();
     }
-    Serial.println();
     
     // Nachricht senden
     if (!_interface->sendMessage(COB_ID_RSDO_BASE + nodeId, 0, 8, data)) {
-        Serial.println("[FEHLER] CAN-Nachricht konnte nicht gesendet werden");
+        Serial.printf("[SDO-ERROR] CAN-Nachricht konnte nicht gesendet werden (Node %d)\n", nodeId);
         return false;
     }
 
@@ -241,27 +319,35 @@ bool CANopen::writeSDOWithTimeout(uint8_t nodeId, uint16_t index, uint8_t subInd
             uint8_t buf[8];
             
             if (_interface->receiveMessage(&id, &ext, &len, buf)) {
-                // Debug-Ausgabe
-                Serial.printf("[DEBUG] Empfangene Antwort von ID 0x%lX: ", id);
-                for (int i = 0; i < len; i++) {
-                    Serial.printf("%02X ", buf[i]);
+                // Debug-Ausgabe (optional)
+                if (_debugMode) {
+                    Serial.printf("[SDO-WRITE] Response ID 0x%03lX: ", id);
+                    for (int i = 0; i < len; i++) {
+                        Serial.printf("%02X ", buf[i]);
+                    }
+                    Serial.println();
                 }
-                Serial.println();
                 
                 if (id == (COB_ID_TSDO_BASE + nodeId)) {
                     if ((buf[0] & 0xE0) == 0x80) {
                         // Dies ist ein SDO Abort
                         uint32_t abortCode = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
-                        Serial.printf("[FEHLER] SDO Abort Code: 0x%08X\n", abortCode);
+                        Serial.printf("[SDO-ABORT] Node %d, Index 0x%04X:%02X, Code 0x%08X (%s)\n",
+                                      nodeId, index, subIndex, abortCode,
+                                      getSDOAbortCodeDescription(abortCode));
                         return false;
                     } else if ((buf[0] & 0xE0) != 0x80) {
+                        if (_debugMode) {
+                            Serial.printf("[SDO-WRITE] Success: Node %d acknowledged\n", nodeId);
+                        }
                         return true;
                     }
                 }
             }
         }
     }
-    Serial.println("[FEHLER] SDO Timeout bei Schreibanfrage");
+    Serial.printf("[SDO-TIMEOUT] Node %d, Index 0x%04X:%02X (nach %lu ms)\n", 
+                  nodeId, index, subIndex, timeout);
     return false;
 }
 // ===================================================================================

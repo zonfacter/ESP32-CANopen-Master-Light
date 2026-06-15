@@ -10,6 +10,16 @@
 #include "CANInterface.h"
 #include "DisplayInterface.h"
 
+// Status-Enumeration für eindeutige Scan-Rückmeldungen
+enum ScanStatus {
+    SCAN_STATUS_IDLE,        // Kein Scan aktiv
+    SCAN_STATUS_RUNNING,     // Scan läuft
+    SCAN_STATUS_FOUND,       // Node gefunden
+    SCAN_STATUS_TIMEOUT,     // Node Timeout
+    SCAN_STATUS_COMPLETED,   // Scan erfolgreich abgeschlossen
+    SCAN_STATUS_ABORTED      // Scan abgebrochen (z.B. durch Benutzer)
+};
+
 // Externe Variablen aus Hauptprogramm
 extern DisplayInterface* displayInterface;
 extern CANInterface* canInterface;
@@ -33,6 +43,8 @@ static int currentAttempt = 0;
 static const int maxAttempts = 3;
 static const int nodeTimeout = 100; // ms Timeout pro Node
 static int foundNodes = 0;
+static int timeoutNodes = 0;
+static ScanStatus currentScanStatus = SCAN_STATUS_IDLE;
 
 // Vorwärtsdeklaration der internen Funktionen
 void initializeScan();
@@ -64,11 +76,15 @@ void initializeScan() {
     lastScanTime = millis();
     currentAttempt = 0;
     foundNodes = 0;
+    timeoutNodes = 0;
+    currentScanStatus = SCAN_STATUS_RUNNING;
     
-    Serial.print("[SCAN] Starte Node-Scan von ");
-    Serial.print(scanStart);
-    Serial.print(" bis ");
-    Serial.println(scanEnd);
+    Serial.println("========================================");
+    Serial.println("[SCAN-START] Node-Scan initialisiert");
+    Serial.printf("[SCAN-INFO] Bereich: Node %d bis %d\n", scanStart, scanEnd);
+    Serial.printf("[SCAN-INFO] Max Versuche pro Node: %d\n", maxAttempts);
+    Serial.printf("[SCAN-INFO] Timeout pro Versuch: %d ms\n", nodeTimeout);
+    Serial.println("========================================");
     
     // Display-Anzeige aktualisieren
     char message[50];
@@ -83,6 +99,12 @@ void processSingleNode() {
     
     // Maximale Anzahl Versuche erreicht?
     if (currentAttempt >= maxAttempts) {
+        // Node hat nach max Versuchen nicht geantwortet
+        currentScanStatus = SCAN_STATUS_TIMEOUT;
+        timeoutNodes++;
+        Serial.printf("[SCAN-TIMEOUT] Node %d antwortet nicht (nach %d Versuchen)\n", 
+                      currentNode, maxAttempts);
+        
         // Zum nächsten Node weitergehen
         currentAttempt = 0;
         currentNode++;
@@ -92,6 +114,7 @@ void processSingleNode() {
             char message[50];
             sprintf(message, "Scanne Node %d", currentNode);
             displayActionScreen("Node-Scan", message, 1000);
+            Serial.printf("[SCAN-PROGRESS] Weiter mit Node %d\n", currentNode);
         }
         
         // Ende des Scan-Bereichs erreicht?
@@ -106,12 +129,18 @@ void processSingleNode() {
     
     // Node nur abfragen, wenn wir noch im Scan-Modus sind
     if (!scanning) {
+        currentScanStatus = SCAN_STATUS_ABORTED;
+        Serial.println("[SCAN-ABORTED] Scan wurde abgebrochen");
+        finalizeScan();
         return;
     }
     
     // SDO-Leseanfragen für verschiedene wichtige Objekte probieren
     uint16_t objectIndexes[] = {0x1000, 0x1001, 0x1018}; // Gerätetyp, Fehlerregister, Identität
     uint8_t objectIndex = currentAttempt % 3; // Rotiere durch die Objekte
+    
+    Serial.printf("[SCAN-REQUEST] Node %d, Versuch %d/%d, Objekt 0x%04X\n", 
+                  currentNode, currentAttempt, maxAttempts, objectIndexes[objectIndex]);
     
     // SDO-Leseanfrage vorbereiten
     uint8_t sdo[8] = {
@@ -127,7 +156,7 @@ void processSingleNode() {
     bool success = sendCANMessage(cobId, 0, 8, sdo);
     
     if (!success) {
-        Serial.printf("[DEBUG] Sendefehler bei Node %d, Versuch %d\n", currentNode, currentAttempt);
+        Serial.printf("[SCAN-ERROR] Sendefehler bei Node %d, Versuch %d\n", currentNode, currentAttempt);
     }
     
     // Alternativ versuchen wir auch, ob der Knoten auf ein NMT Start Commando reagiert
@@ -143,18 +172,37 @@ void finalizeScan() {
     scanning = false;
     currentNode = 0;
     
-    Serial.print("[SCAN] Scan abgeschlossen. Gefundene Nodes: ");
-    Serial.println(foundNodes);
+    // Status basierend auf Ergebnis setzen
+    if (currentScanStatus == SCAN_STATUS_ABORTED) {
+        Serial.println("========================================");
+        Serial.println("[SCAN-ENDE] Scan abgebrochen");
+    } else {
+        currentScanStatus = SCAN_STATUS_COMPLETED;
+        Serial.println("========================================");
+        Serial.println("[SCAN-ENDE] Scan erfolgreich abgeschlossen");
+    }
+    
+    Serial.printf("[SCAN-RESULT] Gefundene Nodes: %d\n", foundNodes);
+    Serial.printf("[SCAN-RESULT] Timeout Nodes: %d\n", timeoutNodes);
+    Serial.printf("[SCAN-RESULT] Gescannte Nodes: %d\n", scanEnd - scanStart + 1);
+    Serial.println("========================================");
     
     // Erfolgsmeldung anzeigen
     char message[50];
-    sprintf(message, "Scan abgeschlossen\n%d Nodes gefunden", foundNodes);
+    if (currentScanStatus == SCAN_STATUS_ABORTED) {
+        sprintf(message, "Scan abgebrochen\n%d Nodes gefunden", foundNodes);
+    } else {
+        sprintf(message, "Scan abgeschlossen\n%d Nodes gefunden", foundNodes);
+    }
     displayActionScreen("Node-Scan", message, 2000);
     
     // Nach dem Scan zum Menü zurückkehren
     displayMenu();
     activeSource = SOURCE_BUTTON;
     lastActivityTime = millis();
+    
+    // Status zurücksetzen
+    currentScanStatus = SCAN_STATUS_IDLE;
 }
 
 // Hilfsfunktion zum Senden einer CAN-Nachricht
@@ -172,9 +220,12 @@ void nodeFound(uint8_t nodeId) {
     // Nur zählen, wenn innerhalb des Scan-Bereichs
     if (scanning && nodeId >= scanStart && nodeId <= scanEnd) {
         foundNodes++;
+        currentScanStatus = SCAN_STATUS_FOUND;
         
-        Serial.print("[SCAN] Node gefunden: ");
-        Serial.println(nodeId);
+        Serial.println("----------------------------------------");
+        Serial.printf("[SCAN-FOUND] Node %d erfolgreich gefunden!\n", nodeId);
+        Serial.printf("[SCAN-PROGRESS] Gefunden: %d, Timeout: %d\n", foundNodes, timeoutNodes);
+        Serial.println("----------------------------------------");
         
         // Display-Anzeige aktualisieren
         char message[50];
@@ -195,6 +246,7 @@ void nodeFound(uint8_t nodeId) {
             // Anzeige für den nächsten Node aktualisieren
             sprintf(message, "Scanne Node %d", currentNode);
             displayActionScreen("Node-Scan", message, 1000);
+            Serial.printf("[SCAN-PROGRESS] Weiter mit Node %d\n", currentNode);
             
             // Zeit zurücksetzen für den nächsten Node
             lastScanTime = millis();

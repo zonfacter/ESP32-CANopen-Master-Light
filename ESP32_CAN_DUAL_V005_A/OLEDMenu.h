@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 #include "DisplayInterface.h"
+#include "DisplayConfig.h"
 
 // Button Pins definieren
 #define BUTTON_UP      26   // GPIO-Pin für UP-Taste
@@ -16,9 +17,9 @@
 
 #define CAN_INT 4  // CAN-Interrupt-Pin
 
-// Button-Parameter
-#define DEBOUNCE_TIME    50   // ms Entprellzeit
-#define LONG_PRESS_TIME  800  // ms für langes Drücken (zurück)
+// Button-Parameter (verwende zentralisierte Konstanten)
+#define DEBOUNCE_TIME    BUTTON_DEBOUNCE_MS
+#define LONG_PRESS_TIME  BUTTON_LONG_PRESS_MS
 
 // Steuerungsquelle
 enum ControlSource {
